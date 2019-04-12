@@ -1,30 +1,26 @@
 ﻿using System.Collections.Generic;
 using System.Globalization;
 using Umbraco.Core.Models;
-using Umbraco.Core.Models.Rdbms;
+using Umbraco.Core.Persistence.Dtos;
 
 namespace Umbraco.Core.Persistence.Factories
 {
-    internal class MacroFactory 
+    internal static class MacroFactory
     {
-        #region Implementation of IEntityFactory<Language,LanguageDto>
-
-        public IMacro BuildEntity(MacroDto dto)
+        public static IMacro BuildEntity(MacroDto dto)
         {
-            var model = new Macro(dto.Id, dto.UseInEditor, dto.RefreshRate, dto.Alias, dto.Name, dto.ScriptType, dto.ScriptAssembly, dto.Xslt, dto.CacheByPage, dto.CachePersonalized, dto.DontRender, dto.Python);
-
+            var model = new Macro(dto.Id, dto.UniqueId, dto.UseInEditor, dto.RefreshRate, dto.Alias, dto.Name, dto.CacheByPage, dto.CachePersonalized, dto.DontRender, dto.MacroSource, (MacroTypes)dto.MacroType);
 
             try
             {
                 model.DisableChangeTracking();
 
-                foreach (var p in dto.MacroPropertyDtos)
+                foreach (var p in dto.MacroPropertyDtos.EmptyNull())
                 {
-                    model.Properties.Add(new MacroProperty(p.Id, p.Alias, p.Name, p.SortOrder, p.EditorAlias));
+                    model.Properties.Add(new MacroProperty(p.Id, p.UniqueId, p.Alias, p.Name, p.SortOrder, p.EditorAlias));
                 }
 
-                //on initial construction we don't want to have dirty properties tracked
-                // http://issues.umbraco.org/issue/U4-1946
+                // reset dirty initial properties (U4-1946)
                 model.ResetDirtyProperties(false);
                 return model;
             }
@@ -34,22 +30,21 @@ namespace Umbraco.Core.Persistence.Factories
             }
         }
 
-        public MacroDto BuildDto(IMacro entity)
+        public static MacroDto BuildDto(IMacro entity)
         {
-            var dto = new MacroDto()
-                {
+            var dto = new MacroDto
+            {
+                    UniqueId = entity.Key,
                     Alias = entity.Alias,
                     CacheByPage = entity.CacheByPage,
                     CachePersonalized = entity.CacheByMember,
                     DontRender = entity.DontRender,
                     Name = entity.Name,
-                    Python = entity.ScriptPath,
+                    MacroSource = entity.MacroSource,
                     RefreshRate = entity.CacheDuration,
-                    ScriptAssembly = entity.ControlAssembly,
-                    ScriptType = entity.ControlType,
                     UseInEditor = entity.UseInEditor,
-                    Xslt = entity.XsltPath,
-                    MacroPropertyDtos = BuildPropertyDtos(entity)
+                    MacroPropertyDtos = BuildPropertyDtos(entity),
+                    MacroType = (int)entity.MacroType
                 };
 
             if (entity.HasIdentity)
@@ -58,15 +53,14 @@ namespace Umbraco.Core.Persistence.Factories
             return dto;
         }
 
-        #endregion
-
-        private List<MacroPropertyDto> BuildPropertyDtos(IMacro entity)
+        private static List<MacroPropertyDto> BuildPropertyDtos(IMacro entity)
         {
             var list = new List<MacroPropertyDto>();
             foreach (var p in entity.Properties)
             {
                 var text = new MacroPropertyDto
                 {
+                    UniqueId = p.Key,
                     Alias = p.Alias,
                     Name = p.Name,
                     Macro = entity.Id,

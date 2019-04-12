@@ -1,14 +1,18 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Web;
 using Newtonsoft.Json;
-using umbraco.interfaces;
 using Umbraco.Core;
-using Umbraco.Core.Models.Rdbms;
+using Umbraco.Core.Cache;
+using Umbraco.Core.Configuration;
 using Umbraco.Core.Sync;
 using Umbraco.Web.Routing;
 using Umbraco.Core.Logging;
+using Umbraco.Core.Persistence;
+using Umbraco.Core.Persistence.Dtos;
+using Umbraco.Core.Scoping;
+using Umbraco.Web.Composing;
 
 namespace Umbraco.Web
 {
@@ -20,22 +24,23 @@ namespace Umbraco.Web
     /// </remarks>
     public class BatchedDatabaseServerMessenger : DatabaseServerMessenger
     {
-        public BatchedDatabaseServerMessenger(ApplicationContext appContext, bool enableDistCalls, DatabaseServerMessengerOptions options)
-            : base(appContext, enableDistCalls, options)
-        { }
+        private readonly IUmbracoDatabaseFactory _databaseFactory;
 
-        // invoked by BatchedDatabaseServerMessengerStartup which is an ApplicationEventHandler
-        // with default "ShouldExecute", so that method will run if app IsConfigured and database
-        // context IsDatabaseConfigured - we still want to check CanConnect though to be safe
+        public BatchedDatabaseServerMessenger(
+            IRuntimeState runtime, IUmbracoDatabaseFactory databaseFactory, IScopeProvider scopeProvider, ISqlContext sqlContext, IProfilingLogger proflog, IGlobalSettings globalSettings, DatabaseServerMessengerOptions options)
+            : base(runtime, scopeProvider, sqlContext, proflog, globalSettings, true, options)
+        {
+            _databaseFactory = databaseFactory;
+        }
+
+        // invoked by DatabaseServerRegistrarAndMessengerComponent
         internal void Startup()
         {
             UmbracoModule.EndRequest += UmbracoModule_EndRequest;
-            UmbracoModule.RouteAttempt += UmbracoModule_RouteAttempt;
 
-            if (ApplicationContext.DatabaseContext.CanConnect == false)
+            if (_databaseFactory.CanConnect == false)
             {
-                ApplicationContext.ProfilingLogger.Logger.Warn<BatchedDatabaseServerMessenger>(
-                    "Cannot connect to the database, distributed calls will not be enabled for this server.");
+                Logger.Warn<BatchedDatabaseServerMessenger>("Cannot connect to the database, distributed calls will not be enabled for this server.");
             }
             else
             {
@@ -43,38 +48,21 @@ namespace Umbraco.Web
             }
         }
 
-        private void UmbracoModule_RouteAttempt(object sender, RoutableAttemptEventArgs e)
-        {
-            // as long as umbraco is ready & configured, sync
-            switch (e.Outcome)
-            {
-                case EnsureRoutableOutcome.IsRoutable:
-                case EnsureRoutableOutcome.NotDocumentRequest:
-                case EnsureRoutableOutcome.NoContent:
-                    Sync();
-                    break;
-                //case EnsureRoutableOutcome.NotReady:
-                //case EnsureRoutableOutcome.NotConfigured:
-                //default:
-                //    break;
-            }
-        }
-
-        private void UmbracoModule_EndRequest(object sender, EventArgs e)
+        private void UmbracoModule_EndRequest(object sender, UmbracoRequestEventArgs e)
         {
             // will clear the batch - will remain in HttpContext though - that's ok
             FlushBatch();
         }
 
-        protected override void DeliverRemote(IEnumerable<IServerAddress> servers, ICacheRefresher refresher, MessageType messageType, IEnumerable<object> ids = null, string json = null)
+        protected override void DeliverRemote(ICacheRefresher refresher, MessageType messageType, IEnumerable<object> ids = null, string json = null)
         {
-            var idsA = ids == null ? null : ids.ToArray();
+            var idsA = ids?.ToArray();
 
             Type arrayType;
             if (GetArrayType(idsA, out arrayType) == false)
-                throw new ArgumentException("All items must be of the same type, either int or Guid.", "ids");
+                throw new ArgumentException("All items must be of the same type, either int or Guid.", nameof(ids));
 
-            BatchMessage(servers, refresher, messageType, idsA, arrayType, json);
+            BatchMessage(refresher, messageType, idsA, arrayType, json);
         }
 
         public void FlushBatch()
@@ -84,20 +72,29 @@ namespace Umbraco.Web
 
             var instructions = batch.SelectMany(x => x.Instructions).ToArray();
             batch.Clear();
-            if (instructions.Length == 0) return;
-            WriteInstructions(instructions);
+
+            //Write the instructions but only create JSON blobs with a max instruction count equal to MaxProcessingInstructionCount
+            using (var scope = ScopeProvider.CreateScope())
+            {
+                foreach (var instructionsBatch in instructions.InGroupsOf(Options.MaxProcessingInstructionCount))
+                {
+                    WriteInstructions(scope, instructionsBatch);
+                }
+                scope.Complete();
+            }
+
         }
 
-        private void WriteInstructions(RefreshInstruction[] instructions)
+        private void WriteInstructions(IScope scope, IEnumerable<RefreshInstruction> instructions)
         {
             var dto = new CacheInstructionDto
             {
                 UtcStamp = DateTime.UtcNow,
                 Instructions = JsonConvert.SerializeObject(instructions, Formatting.None),
-                OriginIdentity = LocalIdentity
+                OriginIdentity = LocalIdentity,
+                InstructionCount = instructions.Sum(x => x.JsonIdCount)
             };
-
-            ApplicationContext.DatabaseContext.Database.Insert(dto);
+            scope.Database.Insert(dto);
         }
 
         protected ICollection<RefreshInstructionEnvelope> GetBatch(bool create)
@@ -105,9 +102,9 @@ namespace Umbraco.Web
             // try get the http context from the UmbracoContext, we do this because in the case we are launching an async
             // thread and we know that the cache refreshers will execute, we will ensure the UmbracoContext and therefore we
             // can get the http context from it
-            var httpContext = (UmbracoContext.Current == null ? null : UmbracoContext.Current.HttpContext)
+            var httpContext = (Current.UmbracoContext == null ? null : Current.UmbracoContext.HttpContext)
                 // if this is null, it could be that an async thread is calling this method that we weren't aware of and the UmbracoContext
-                // wasn't ensured at the beginning of the thread. We can try to see if the HttpContext.Current is available which might be 
+                // wasn't ensured at the beginning of the thread. We can try to see if the HttpContext.Current is available which might be
                 // the case if the asp.net synchronization context has kicked in
                 ?? (HttpContext.Current == null ? null : new HttpContextWrapper(HttpContext.Current));
 
@@ -124,7 +121,6 @@ namespace Umbraco.Web
         }
 
         protected void BatchMessage(
-            IEnumerable<IServerAddress> servers,
             ICacheRefresher refresher,
             MessageType messageType,
             IEnumerable<object> ids = null,
@@ -136,9 +132,22 @@ namespace Umbraco.Web
 
             // batch if we can, else write to DB immediately
             if (batch == null)
-                WriteInstructions(instructions.ToArray());
+            {
+                //only write the json blob with a maximum count of the MaxProcessingInstructionCount
+                using (var scope = ScopeProvider.CreateScope())
+                {
+                    foreach (var maxBatch in instructions.InGroupsOf(Options.MaxProcessingInstructionCount))
+                    {
+                        WriteInstructions(scope, maxBatch);
+                    }
+                    scope.Complete();
+                }
+            }
             else
-                batch.Add(new RefreshInstructionEnvelope(servers, refresher, instructions));
-        }        
+            {
+                batch.Add(new RefreshInstructionEnvelope(refresher, instructions));
+            }
+
+        }
     }
 }

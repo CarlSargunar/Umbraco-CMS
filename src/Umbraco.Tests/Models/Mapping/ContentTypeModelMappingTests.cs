@@ -1,73 +1,47 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using AutoMapper;
 using Moq;
 using NUnit.Framework;
-using umbraco;
-using umbraco.cms.presentation;
 using Umbraco.Core;
 using Umbraco.Core.Logging;
 using Umbraco.Core.Models;
-using Umbraco.Core.Persistence;
-using Umbraco.Core.Persistence.SqlSyntax;
-using Umbraco.Core.Profiling;
 using Umbraco.Core.PropertyEditors;
 using Umbraco.Core.Services;
-using Umbraco.Tests.TestHelpers;
 using Umbraco.Tests.TestHelpers.Entities;
+using Umbraco.Tests.Testing;
 using Umbraco.Web.Models.ContentEditing;
-using Umbraco.Web.Models.Mapping;
 using Umbraco.Web.PropertyEditors;
 
 namespace Umbraco.Tests.Models.Mapping
 {
     [TestFixture]
-    public class ContentTypeModelMappingTests : BaseUmbracoConfigurationTest
+    [UmbracoTest(WithApplication = true)]
+    public class ContentTypeModelMappingTests : UmbracoTestBase
     {
-        //Mocks of services that can be setup on a test by test basis to return whatever we want
+        // mocks of services that can be setup on a test by test basis to return whatever we want
         private readonly Mock<IContentTypeService> _contentTypeService = new Mock<IContentTypeService>();
         private readonly Mock<IContentService> _contentService = new Mock<IContentService>();
         private readonly Mock<IDataTypeService> _dataTypeService = new Mock<IDataTypeService>();
-        private Mock<PropertyEditorResolver> _propertyEditorResolver;
         private readonly Mock<IEntityService> _entityService = new Mock<IEntityService>();
         private readonly Mock<IFileService> _fileService = new Mock<IFileService>();
+        private Mock<PropertyEditorCollection> _editorsMock;
 
-        [SetUp]
-        public void Setup()
+        protected override void Compose()
         {
-            var nullCacheHelper = CacheHelper.CreateDisabledCacheHelper();
+            base.Compose();
 
-            //Create an app context using mocks
-            var appContext = new ApplicationContext(
-                new DatabaseContext(Mock.Of<IDatabaseFactory>(), Mock.Of<ILogger>(), Mock.Of<ISqlSyntaxProvider>(), "test"),
-                
-                //Create service context using mocks
-                new ServiceContext(
+            // create and register a fake property editor collection to return fake property editors
+            var editors = new DataEditor[] { new TextboxPropertyEditor(Mock.Of<ILogger>()), };
+            var dataEditors = new DataEditorCollection(editors);
+            _editorsMock = new Mock<PropertyEditorCollection>(dataEditors);
+            _editorsMock.Setup(x => x[It.IsAny<string>()]).Returns(editors[0]);
+            Composition.RegisterUnique(f => _editorsMock.Object);
 
-                    contentService: _contentService.Object,
-                    contentTypeService:_contentTypeService.Object,
-                    dataTypeService:_dataTypeService.Object,
-                    entityService:_entityService.Object,
-                    fileService: _fileService.Object),                    
-
-                nullCacheHelper,
-                new ProfilingLogger(Mock.Of<ILogger>(), Mock.Of<IProfiler>()));
-            
-            //create a fake property editor resolver to return fake property editors
-            Func<IEnumerable<Type>> typeListProducerList = Enumerable.Empty<Type>;
-            _propertyEditorResolver = new Mock<PropertyEditorResolver>(
-                //ctor args
-                Mock.Of<IServiceProvider>(), Mock.Of<ILogger>(), typeListProducerList, nullCacheHelper.RuntimeCache);
-            
-            Mapper.Initialize(configuration =>
-            {
-                //initialize our content type mapper
-                var mapper = new ContentTypeModelMapper(new Lazy<PropertyEditorResolver>(() => _propertyEditorResolver.Object));
-                mapper.ConfigureMappings(configuration, appContext);
-                var entityMapper = new EntityModelMapper();
-                entityMapper.ConfigureMappings(configuration, appContext);
-            });
+            Composition.RegisterUnique(_ => _contentTypeService.Object);
+            Composition.RegisterUnique(_ => _contentService.Object);
+            Composition.RegisterUnique(_ => _dataTypeService.Object);
+            Composition.RegisterUnique(_ => _entityService.Object);
+            Composition.RegisterUnique(_ => _fileService.Object);
         }
 
         [Test]
@@ -77,12 +51,12 @@ namespace Umbraco.Tests.Models.Mapping
 
             // setup the mocks to return the data we want to test against...
 
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(Mock.Of<IDataTypeDefinition>(
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(Mock.Of<IDataType>(
                     definition =>
                         definition.Id == 555
-                        && definition.PropertyEditorAlias == "myPropertyType"
-                        && definition.DatabaseType == DataTypeDatabaseType.Nvarchar));
+                        && definition.EditorAlias == "myPropertyType"
+                        && definition.DatabaseType == ValueStorageType.Nvarchar));
 
             var display = CreateMemberTypeSave();
 
@@ -105,7 +79,7 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(display.CreateDate, result.CreateDate);
             Assert.AreEqual(display.UpdateDate, result.UpdateDate);
 
-            //TODO: Now we need to assert all of the more complicated parts
+            // TODO: Now we need to assert all of the more complicated parts
             Assert.AreEqual(display.Groups.Count(), result.PropertyGroups.Count);
             for (var i = 0; i < display.Groups.Count(); i++)
             {
@@ -116,9 +90,10 @@ namespace Umbraco.Tests.Models.Mapping
                 for (var j = 0; j < propTypes.Count(); j++)
                 {
                     Assert.AreEqual(propTypes.ElementAt(j).Id, result.PropertyTypes.ElementAt(j).Id);
-                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeId, result.PropertyTypes.ElementAt(j).DataTypeDefinitionId);
+                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeId, result.PropertyTypes.ElementAt(j).DataTypeId);
                     Assert.AreEqual(propTypes.ElementAt(j).MemberCanViewProperty, result.MemberCanViewProperty(result.PropertyTypes.ElementAt(j).Alias));
                     Assert.AreEqual(propTypes.ElementAt(j).MemberCanEditProperty, result.MemberCanEditProperty(result.PropertyTypes.ElementAt(j).Alias));
+                    Assert.AreEqual(propTypes.ElementAt(j).IsSensitiveData, result.IsSensitiveProperty(result.PropertyTypes.ElementAt(j).Alias));
                 }
             }
 
@@ -136,12 +111,12 @@ namespace Umbraco.Tests.Models.Mapping
 
             // setup the mocks to return the data we want to test against...
 
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(Mock.Of<IDataTypeDefinition>(
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(Mock.Of<IDataType>(
                     definition =>
                         definition.Id == 555
-                        && definition.PropertyEditorAlias == "myPropertyType"
-                        && definition.DatabaseType == DataTypeDatabaseType.Nvarchar));            
+                        && definition.EditorAlias == "myPropertyType"
+                        && definition.DatabaseType == ValueStorageType.Nvarchar));
 
             var display = CreateMediaTypeSave();
 
@@ -164,7 +139,7 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(display.CreateDate, result.CreateDate);
             Assert.AreEqual(display.UpdateDate, result.UpdateDate);
 
-            //TODO: Now we need to assert all of the more complicated parts
+            // TODO: Now we need to assert all of the more complicated parts
             Assert.AreEqual(display.Groups.Count(), result.PropertyGroups.Count);
             for (var i = 0; i < display.Groups.Count(); i++)
             {
@@ -175,9 +150,9 @@ namespace Umbraco.Tests.Models.Mapping
                 for (var j = 0; j < propTypes.Count(); j++)
                 {
                     Assert.AreEqual(propTypes.ElementAt(j).Id, result.PropertyTypes.ElementAt(j).Id);
-                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeId, result.PropertyTypes.ElementAt(j).DataTypeDefinitionId);
+                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeId, result.PropertyTypes.ElementAt(j).DataTypeId);
                 }
-            }            
+            }
 
             Assert.AreEqual(display.AllowedContentTypes.Count(), result.AllowedContentTypes.Count());
             for (var i = 0; i < display.AllowedContentTypes.Count(); i++)
@@ -192,20 +167,20 @@ namespace Umbraco.Tests.Models.Mapping
             //Arrange
 
             // setup the mocks to return the data we want to test against...
-            
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(Mock.Of<IDataTypeDefinition>(
-                    definition => 
-                        definition.Id == 555 
-                        && definition.PropertyEditorAlias == "myPropertyType"
-                        && definition.DatabaseType == DataTypeDatabaseType.Nvarchar));
+
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(Mock.Of<IDataType>(
+                    definition =>
+                        definition.Id == 555
+                        && definition.EditorAlias == "myPropertyType"
+                        && definition.DatabaseType == ValueStorageType.Nvarchar));
 
 
             _fileService.Setup(x => x.GetTemplate(It.IsAny<string>()))
                 .Returns((string alias) => Mock.Of<ITemplate>(
                     definition =>
                         definition.Id == alias.GetHashCode() && definition.Alias == alias));
-                
+
 
             var display = CreateContentTypeSave();
 
@@ -227,8 +202,8 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(display.AllowAsRoot, result.AllowedAsRoot);
             Assert.AreEqual(display.CreateDate, result.CreateDate);
             Assert.AreEqual(display.UpdateDate, result.UpdateDate);
-            
-            //TODO: Now we need to assert all of the more complicated parts
+
+            // TODO: Now we need to assert all of the more complicated parts
             Assert.AreEqual(display.Groups.Count(), result.PropertyGroups.Count);
             for (var i = 0; i < display.Groups.Count(); i++)
             {
@@ -239,7 +214,7 @@ namespace Umbraco.Tests.Models.Mapping
                 for (var j = 0; j < propTypes.Count(); j++)
                 {
                     Assert.AreEqual(propTypes.ElementAt(j).Id, result.PropertyTypes.ElementAt(j).Id);
-                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeId, result.PropertyTypes.ElementAt(j).DataTypeDefinitionId);
+                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeId, result.PropertyTypes.ElementAt(j).DataTypeId);
                 }
             }
 
@@ -267,12 +242,12 @@ namespace Umbraco.Tests.Models.Mapping
 
             // setup the mocks to return the data we want to test against...
 
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(Mock.Of<IDataTypeDefinition>(
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(Mock.Of<IDataType>(
                     definition =>
                         definition.Id == 555
-                        && definition.PropertyEditorAlias == "myPropertyType"
-                        && definition.DatabaseType == DataTypeDatabaseType.Nvarchar));
+                        && definition.EditorAlias == "myPropertyType"
+                        && definition.DatabaseType == ValueStorageType.Nvarchar));
 
 
             var display = CreateCompositionMediaTypeSave();
@@ -283,7 +258,7 @@ namespace Umbraco.Tests.Models.Mapping
 
             //Assert
 
-            //TODO: Now we need to assert all of the more complicated parts
+            // TODO: Now we need to assert all of the more complicated parts
             Assert.AreEqual(display.Groups.Count(x => x.Inherited == false), result.PropertyGroups.Count);
         }
 
@@ -294,12 +269,12 @@ namespace Umbraco.Tests.Models.Mapping
 
             // setup the mocks to return the data we want to test against...
 
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(Mock.Of<IDataTypeDefinition>(
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(Mock.Of<IDataType>(
                     definition =>
                         definition.Id == 555
-                        && definition.PropertyEditorAlias == "myPropertyType"
-                        && definition.DatabaseType == DataTypeDatabaseType.Nvarchar));
+                        && definition.EditorAlias == "myPropertyType"
+                        && definition.DatabaseType == ValueStorageType.Nvarchar));
 
 
             var display = CreateCompositionContentTypeSave();
@@ -310,7 +285,7 @@ namespace Umbraco.Tests.Models.Mapping
 
             //Assert
 
-            //TODO: Now we need to assert all of the more complicated parts
+            // TODO: Now we need to assert all of the more complicated parts
             Assert.AreEqual(display.Groups.Count(x => x.Inherited == false), result.PropertyGroups.Count);
         }
 
@@ -318,24 +293,14 @@ namespace Umbraco.Tests.Models.Mapping
         public void IMemberType_To_MemberTypeDisplay()
         {
             //Arrange
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             // setup the mocks to return the data we want to test against...
 
-            // for any call to GetPreValuesCollectionByDataTypeId just return an empty dictionary for now
-            // TODO: but we'll need to change this to return some pre-values to test the mappings
-            _dataTypeService.Setup(x => x.GetPreValuesCollectionByDataTypeId(It.IsAny<int>()))
-                .Returns(new PreValueCollection(new Dictionary<string, PreValue>()));
-
-            //return a textbox property editor for any requested editor by alias
-            _propertyEditorResolver.Setup(resolver => resolver.GetByAlias(It.IsAny<string>()))
-                .Returns(new TextboxPropertyEditor());
-            //for testing, just return a list of whatever property editors we want
-            _propertyEditorResolver.Setup(resolver => resolver.PropertyEditors)
-                .Returns(new[] { new TextboxPropertyEditor() });
-
             var memberType = MockedContentTypes.CreateSimpleMemberType();
-            memberType.MemberTypePropertyTypes[memberType.PropertyTypes.Last().Alias] = new MemberTypePropertyProfileAccess(true, true);
-            
+            memberType.MemberTypePropertyTypes[memberType.PropertyTypes.Last().Alias] = new MemberTypePropertyProfileAccess(true, true, true);
+
             MockedContentTypes.EnsureAllIds(memberType, 8888);
 
             //Act
@@ -356,7 +321,7 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(memberType.CreateDate, result.CreateDate);
             Assert.AreEqual(memberType.UpdateDate, result.UpdateDate);
 
-            //TODO: Now we need to assert all of the more complicated parts
+            // TODO: Now we need to assert all of the more complicated parts
 
             Assert.AreEqual(memberType.PropertyGroups.Count(), result.Groups.Count());
             for (var i = 0; i < memberType.PropertyGroups.Count(); i++)
@@ -369,8 +334,8 @@ namespace Umbraco.Tests.Models.Mapping
                 for (var j = 0; j < propTypes.Count(); j++)
                 {
                     Assert.AreEqual(propTypes.ElementAt(j).Id, result.Groups.ElementAt(i).Properties.ElementAt(j).Id);
-                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeDefinitionId, result.Groups.ElementAt(i).Properties.ElementAt(j).DataTypeId);
-                    
+                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeId, result.Groups.ElementAt(i).Properties.ElementAt(j).DataTypeId);
+
                     Assert.AreEqual(memberType.MemberCanViewProperty(propTypes.ElementAt(j).Alias), result.Groups.ElementAt(i).Properties.ElementAt(j).MemberCanViewProperty);
                     Assert.AreEqual(memberType.MemberCanEditProperty(propTypes.ElementAt(j).Alias), result.Groups.ElementAt(i).Properties.ElementAt(j).MemberCanEditProperty);
                 }
@@ -388,20 +353,10 @@ namespace Umbraco.Tests.Models.Mapping
         public void IMediaType_To_MediaTypeDisplay()
         {
             //Arrange
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             // setup the mocks to return the data we want to test against...
-
-            // for any call to GetPreValuesCollectionByDataTypeId just return an empty dictionary for now
-            // TODO: but we'll need to change this to return some pre-values to test the mappings
-            _dataTypeService.Setup(x => x.GetPreValuesCollectionByDataTypeId(It.IsAny<int>()))
-                .Returns(new PreValueCollection(new Dictionary<string, PreValue>()));
-
-            //return a textbox property editor for any requested editor by alias
-            _propertyEditorResolver.Setup(resolver => resolver.GetByAlias(It.IsAny<string>()))
-                .Returns(new TextboxPropertyEditor());
-            //for testing, just return a list of whatever property editors we want
-            _propertyEditorResolver.Setup(resolver => resolver.PropertyEditors)
-                .Returns(new[] { new TextboxPropertyEditor() });
 
             var mediaType = MockedContentTypes.CreateImageMediaType();
             MockedContentTypes.EnsureAllIds(mediaType, 8888);
@@ -424,7 +379,7 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(mediaType.CreateDate, result.CreateDate);
             Assert.AreEqual(mediaType.UpdateDate, result.UpdateDate);
 
-            //TODO: Now we need to assert all of the more complicated parts
+            // TODO: Now we need to assert all of the more complicated parts
 
             Assert.AreEqual(mediaType.PropertyGroups.Count(), result.Groups.Count());
             for (var i = 0; i < mediaType.PropertyGroups.Count(); i++)
@@ -437,10 +392,10 @@ namespace Umbraco.Tests.Models.Mapping
                 for (var j = 0; j < propTypes.Count(); j++)
                 {
                     Assert.AreEqual(propTypes.ElementAt(j).Id, result.Groups.ElementAt(i).Properties.ElementAt(j).Id);
-                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeDefinitionId, result.Groups.ElementAt(i).Properties.ElementAt(j).DataTypeId);
+                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeId, result.Groups.ElementAt(i).Properties.ElementAt(j).DataTypeId);
                 }
             }
-            
+
             Assert.AreEqual(mediaType.AllowedContentTypes.Count(), result.AllowedContentTypes.Count());
             for (var i = 0; i < mediaType.AllowedContentTypes.Count(); i++)
             {
@@ -453,22 +408,12 @@ namespace Umbraco.Tests.Models.Mapping
         public void IContentType_To_ContentTypeDisplay()
         {
             //Arrange
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             // setup the mocks to return the data we want to test against...
 
-            // for any call to GetPreValuesCollectionByDataTypeId just return an empty dictionary for now
-            // TODO: but we'll need to change this to return some pre-values to test the mappings
-            _dataTypeService.Setup(x => x.GetPreValuesCollectionByDataTypeId(It.IsAny<int>()))
-                .Returns(new PreValueCollection(new Dictionary<string, PreValue>()));
-
-            //return a textbox property editor for any requested editor by alias
-            _propertyEditorResolver.Setup(resolver => resolver.GetByAlias(It.IsAny<string>()))
-                .Returns(new TextboxPropertyEditor());
-            //for testing, just return a list of whatever property editors we want
-            _propertyEditorResolver.Setup(resolver => resolver.PropertyEditors)
-                .Returns(new[] { new TextboxPropertyEditor() });
-            
-            var contentType = MockedContentTypes.CreateTextpageContentType();
+            var contentType = MockedContentTypes.CreateTextPageContentType();
             MockedContentTypes.EnsureAllIds(contentType, 8888);
 
             //Act
@@ -490,20 +435,20 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(contentType.UpdateDate, result.UpdateDate);
             Assert.AreEqual(contentType.DefaultTemplate.Alias, result.DefaultTemplate.Alias);
 
-            //TODO: Now we need to assert all of the more complicated parts
+            // TODO: Now we need to assert all of the more complicated parts
 
-            Assert.AreEqual(contentType.PropertyGroups.Count(), result.Groups.Count());
-            for (var i = 0; i < contentType.PropertyGroups.Count(); i++)
+            Assert.AreEqual(contentType.PropertyGroups.Count, result.Groups.Count());
+            for (var i = 0; i < contentType.PropertyGroups.Count; i++)
             {
-                Assert.AreEqual(contentType.PropertyGroups.ElementAt(i).Id, result.Groups.ElementAt(i).Id);
-                Assert.AreEqual(contentType.PropertyGroups.ElementAt(i).Name, result.Groups.ElementAt(i).Name);
-                var propTypes = contentType.PropertyGroups.ElementAt(i).PropertyTypes;
+                Assert.AreEqual(contentType.PropertyGroups[i].Id, result.Groups.ElementAt(i).Id);
+                Assert.AreEqual(contentType.PropertyGroups[i].Name, result.Groups.ElementAt(i).Name);
+                var propTypes = contentType.PropertyGroups[i].PropertyTypes;
 
-                Assert.AreEqual(propTypes.Count(), result.Groups.ElementAt(i).Properties.Count());
-                for (var j = 0; j < propTypes.Count(); j++)
+                Assert.AreEqual(propTypes.Count, result.Groups.ElementAt(i).Properties.Count());
+                for (var j = 0; j < propTypes.Count; j++)
                 {
-                    Assert.AreEqual(propTypes.ElementAt(j).Id, result.Groups.ElementAt(i).Properties.ElementAt(j).Id);
-                    Assert.AreEqual(propTypes.ElementAt(j).DataTypeDefinitionId, result.Groups.ElementAt(i).Properties.ElementAt(j).DataTypeId);
+                    Assert.AreEqual(propTypes[j].Id, result.Groups.ElementAt(i).Properties.ElementAt(j).Id);
+                    Assert.AreEqual(propTypes[j].DataTypeId, result.Groups.ElementAt(i).Properties.ElementAt(j).DataTypeId);
                 }
             }
 
@@ -524,8 +469,8 @@ namespace Umbraco.Tests.Models.Mapping
         [Test]
         public void MemberPropertyGroupBasic_To_MemberPropertyGroup()
         {
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(new DataTypeDefinition("test"));
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             var basic = new PropertyGroupBasic<MemberPropertyTypeBasic>
             {
@@ -538,6 +483,7 @@ namespace Umbraco.Tests.Models.Mapping
                     {
                         MemberCanEditProperty = true,
                         MemberCanViewProperty = true,
+                        IsSensitiveData = true,
                         Id = 33,
                         SortOrder = 1,
                         Alias = "prop1",
@@ -555,6 +501,7 @@ namespace Umbraco.Tests.Models.Mapping
                     {
                         MemberCanViewProperty = false,
                         MemberCanEditProperty = false,
+                        IsSensitiveData = false,
                         Id = 34,
                         SortOrder = 2,
                         Alias = "prop2",
@@ -593,8 +540,8 @@ namespace Umbraco.Tests.Models.Mapping
         [Test]
         public void PropertyGroupBasic_To_PropertyGroup()
         {
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(new DataTypeDefinition("test"));
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             var basic = new PropertyGroupBasic<PropertyTypeBasic>
             {
@@ -659,8 +606,8 @@ namespace Umbraco.Tests.Models.Mapping
         [Test]
         public void MemberPropertyTypeBasic_To_PropertyType()
         {
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(new DataTypeDefinition("test"));
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             var basic = new MemberPropertyTypeBasic()
             {
@@ -684,7 +631,7 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(basic.SortOrder, result.SortOrder);
             Assert.AreEqual(basic.Alias, result.Alias);
             Assert.AreEqual(basic.Description, result.Description);
-            Assert.AreEqual(basic.DataTypeId, result.DataTypeDefinitionId);
+            Assert.AreEqual(basic.DataTypeId, result.DataTypeId);
             Assert.AreEqual(basic.Label, result.Name);
             Assert.AreEqual(basic.Validation.Mandatory, result.Mandatory);
             Assert.AreEqual(basic.Validation.Pattern, result.ValidationRegExp);
@@ -693,8 +640,8 @@ namespace Umbraco.Tests.Models.Mapping
         [Test]
         public void PropertyTypeBasic_To_PropertyType()
         {
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(new DataTypeDefinition("test"));
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             var basic = new PropertyTypeBasic()
             {
@@ -718,7 +665,7 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(basic.SortOrder, result.SortOrder);
             Assert.AreEqual(basic.Alias, result.Alias);
             Assert.AreEqual(basic.Description, result.Description);
-            Assert.AreEqual(basic.DataTypeId, result.DataTypeDefinitionId);           
+            Assert.AreEqual(basic.DataTypeId, result.DataTypeId);
             Assert.AreEqual(basic.Label, result.Name);
             Assert.AreEqual(basic.Validation.Mandatory, result.Mandatory);
             Assert.AreEqual(basic.Validation.Pattern, result.ValidationRegExp);
@@ -728,57 +675,47 @@ namespace Umbraco.Tests.Models.Mapping
         public void IMediaTypeComposition_To_MediaTypeDisplay()
         {
             //Arrange
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             // setup the mocks to return the data we want to test against...
-
-            // for any call to GetPreValuesCollectionByDataTypeId just return an empty dictionary for now
-            // TODO: but we'll need to change this to return some pre-values to test the mappings
-            _dataTypeService.Setup(x => x.GetPreValuesCollectionByDataTypeId(It.IsAny<int>()))
-                .Returns(new PreValueCollection(new Dictionary<string, PreValue>()));
 
             _entityService.Setup(x => x.GetObjectType(It.IsAny<int>()))
                 .Returns(UmbracoObjectTypes.DocumentType);
 
-            //return a textbox property editor for any requested editor by alias
-            _propertyEditorResolver.Setup(resolver => resolver.GetByAlias(It.IsAny<string>()))
-                .Returns(new TextboxPropertyEditor());
-            //for testing, just return a list of whatever property editors we want
-            _propertyEditorResolver.Setup(resolver => resolver.PropertyEditors)
-                .Returns(new[] { new TextboxPropertyEditor() });
-
             var ctMain = MockedContentTypes.CreateSimpleMediaType("parent", "Parent");
             //not assigned to tab
-            ctMain.AddPropertyType(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext)
+            ctMain.AddPropertyType(new PropertyType(Constants.PropertyEditors.Aliases.TextBox, ValueStorageType.Ntext)
             {
                 Alias = "umbracoUrlName",
                 Name = "Slug",
                 Description = "",
                 Mandatory = false,
                 SortOrder = 1,
-                DataTypeDefinitionId = -88
+                DataTypeId = -88
             });
             MockedContentTypes.EnsureAllIds(ctMain, 8888);
             var ctChild1 = MockedContentTypes.CreateSimpleMediaType("child1", "Child 1", ctMain, true);
-            ctChild1.AddPropertyType(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext)
+            ctChild1.AddPropertyType(new PropertyType(Constants.PropertyEditors.Aliases.TextBox, ValueStorageType.Ntext)
             {
                 Alias = "someProperty",
                 Name = "Some Property",
                 Description = "",
                 Mandatory = false,
                 SortOrder = 1,
-                DataTypeDefinitionId = -88
+                DataTypeId = -88
             }, "Another tab");
             MockedContentTypes.EnsureAllIds(ctChild1, 7777);
             var contentType = MockedContentTypes.CreateSimpleMediaType("child2", "Child 2", ctChild1, true, "CustomGroup");
             //not assigned to tab
-            contentType.AddPropertyType(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext)
+            contentType.AddPropertyType(new PropertyType(Constants.PropertyEditors.Aliases.TextBox, ValueStorageType.Ntext)
             {
                 Alias = "umbracoUrlAlias",
                 Name = "AltUrl",
                 Description = "",
                 Mandatory = false,
                 SortOrder = 1,
-                DataTypeDefinitionId = -88
+                DataTypeId = -88
             });
             MockedContentTypes.EnsureAllIds(contentType, 6666);
 
@@ -801,7 +738,7 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(contentType.CreateDate, result.CreateDate);
             Assert.AreEqual(contentType.UpdateDate, result.UpdateDate);
 
-            //TODO: Now we need to assert all of the more complicated parts
+            // TODO: Now we need to assert all of the more complicated parts
 
             Assert.AreEqual(contentType.CompositionPropertyGroups.Select(x => x.Name).Distinct().Count(), result.Groups.Count(x => x.IsGenericProperties == false));
             Assert.AreEqual(1, result.Groups.Count(x => x.IsGenericProperties));
@@ -818,7 +755,7 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(2, result.Groups.Count(x => x.ParentTabContentTypes.Any()));
             Assert.IsTrue(result.Groups.SelectMany(x => x.ParentTabContentTypes).ContainsAll(new[] { ctMain.Id, ctChild1.Id }));
 
-            
+
             Assert.AreEqual(contentType.AllowedContentTypes.Count(), result.AllowedContentTypes.Count());
             for (var i = 0; i < contentType.AllowedContentTypes.Count(); i++)
             {
@@ -831,50 +768,40 @@ namespace Umbraco.Tests.Models.Mapping
         public void IContentTypeComposition_To_ContentTypeDisplay()
         {
             //Arrange
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             // setup the mocks to return the data we want to test against...
-
-            // for any call to GetPreValuesCollectionByDataTypeId just return an empty dictionary for now
-            // TODO: but we'll need to change this to return some pre-values to test the mappings
-            _dataTypeService.Setup(x => x.GetPreValuesCollectionByDataTypeId(It.IsAny<int>()))
-                .Returns(new PreValueCollection(new Dictionary<string, PreValue>()));
 
             _entityService.Setup(x => x.GetObjectType(It.IsAny<int>()))
                 .Returns(UmbracoObjectTypes.DocumentType);
 
-            //return a textbox property editor for any requested editor by alias
-            _propertyEditorResolver.Setup(resolver => resolver.GetByAlias(It.IsAny<string>()))
-                .Returns(new TextboxPropertyEditor());
-            //for testing, just return a list of whatever property editors we want
-            _propertyEditorResolver.Setup(resolver => resolver.PropertyEditors)
-                .Returns(new[] { new TextboxPropertyEditor() });
-
             var ctMain = MockedContentTypes.CreateSimpleContentType();
             //not assigned to tab
-            ctMain.AddPropertyType(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext)
+            ctMain.AddPropertyType(new PropertyType(Constants.PropertyEditors.Aliases.TextBox, ValueStorageType.Ntext)
             {
-                Alias = "umbracoUrlName", Name = "Slug", Description = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88
+                Alias = "umbracoUrlName", Name = "Slug", Description = "", Mandatory = false, SortOrder = 1, DataTypeId = -88
             });
             MockedContentTypes.EnsureAllIds(ctMain, 8888);
             var ctChild1 = MockedContentTypes.CreateSimpleContentType("child1", "Child 1", ctMain, true);
-            ctChild1.AddPropertyType(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext)
+            ctChild1.AddPropertyType(new PropertyType(Constants.PropertyEditors.Aliases.TextBox, ValueStorageType.Ntext)
             {
                 Alias = "someProperty",
                 Name = "Some Property",
                 Description = "",
                 Mandatory = false,
                 SortOrder = 1,
-                DataTypeDefinitionId = -88
+                DataTypeId = -88
             }, "Another tab");
             MockedContentTypes.EnsureAllIds(ctChild1, 7777);
             var contentType = MockedContentTypes.CreateSimpleContentType("child2", "Child 2", ctChild1, true, "CustomGroup");
             //not assigned to tab
-            contentType.AddPropertyType(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext)
+            contentType.AddPropertyType(new PropertyType(Constants.PropertyEditors.Aliases.TextBox, ValueStorageType.Ntext)
             {
-                Alias = "umbracoUrlAlias", Name = "AltUrl", Description = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88
+                Alias = "umbracoUrlAlias", Name = "AltUrl", Description = "", Mandatory = false, SortOrder = 1, DataTypeId = -88
             });
             MockedContentTypes.EnsureAllIds(contentType, 6666);
-            
+
 
             //Act
 
@@ -895,7 +822,7 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(contentType.UpdateDate, result.UpdateDate);
             Assert.AreEqual(contentType.DefaultTemplate.Alias, result.DefaultTemplate.Alias);
 
-            //TODO: Now we need to assert all of the more complicated parts
+            // TODO: Now we need to assert all of the more complicated parts
 
             Assert.AreEqual(contentType.CompositionPropertyGroups.Select(x => x.Name).Distinct().Count(), result.Groups.Count(x => x.IsGenericProperties == false));
             Assert.AreEqual(1, result.Groups.Count(x => x.IsGenericProperties));
@@ -929,8 +856,8 @@ namespace Umbraco.Tests.Models.Mapping
         [Test]
         public void MemberPropertyTypeBasic_To_MemberPropertyTypeDisplay()
         {
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(new DataTypeDefinition("test"));
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             var basic = new MemberPropertyTypeBasic()
             {
@@ -943,6 +870,7 @@ namespace Umbraco.Tests.Models.Mapping
                 Label = "Prop 1",
                 MemberCanViewProperty = true,
                 MemberCanEditProperty = true,
+                IsSensitiveData = true,
                 Validation = new PropertyTypeValidation()
                 {
                     Mandatory = true,
@@ -962,13 +890,14 @@ namespace Umbraco.Tests.Models.Mapping
             Assert.AreEqual(basic.Validation, result.Validation);
             Assert.AreEqual(basic.MemberCanViewProperty, result.MemberCanViewProperty);
             Assert.AreEqual(basic.MemberCanEditProperty, result.MemberCanEditProperty);
+            Assert.AreEqual(basic.IsSensitiveData, result.IsSensitiveData);
         }
 
         [Test]
         public void PropertyTypeBasic_To_PropertyTypeDisplay()
         {
-            _dataTypeService.Setup(x => x.GetDataTypeDefinitionById(It.IsAny<int>()))
-                .Returns(new DataTypeDefinition("test"));
+            _dataTypeService.Setup(x => x.GetDataType(It.IsAny<int>()))
+                .Returns(new DataType(new VoidEditor(Mock.Of<ILogger>())));
 
             var basic = new PropertyTypeBasic()
             {
@@ -1017,7 +946,7 @@ namespace Umbraco.Tests.Models.Mapping
                 Groups = new[]
                 {
                     new PropertyGroupBasic<MemberPropertyTypeBasic>()
-                    {                        
+                    {
                         Id = 987,
                         Name = "Tab 1",
                         SortOrder = 0,
@@ -1028,6 +957,7 @@ namespace Umbraco.Tests.Models.Mapping
                             {
                                 MemberCanEditProperty = true,
                                 MemberCanViewProperty = true,
+                                IsSensitiveData = true,
                                 Alias = "property1",
                                 Description = "this is property 1",
                                 Inherited = false,
@@ -1051,7 +981,7 @@ namespace Umbraco.Tests.Models.Mapping
             return new MediaTypeSave
             {
                 Alias = "test",
-                AllowAsRoot = true,                
+                AllowAsRoot = true,
                 AllowedContentTypes = new[] { 666, 667 },
                 Description = "hello world",
                 Icon = "tree-icon",
@@ -1093,10 +1023,10 @@ namespace Umbraco.Tests.Models.Mapping
         }
 
         private DocumentTypeSave CreateContentTypeSave()
-        {            
+        {
             return new DocumentTypeSave
             {
-                Alias = "test",     
+                Alias = "test",
                 AllowAsRoot = true,
                 AllowedTemplates = new []
                 {
@@ -1121,11 +1051,11 @@ namespace Umbraco.Tests.Models.Mapping
                         Id = 987,
                         Name = "Tab 1",
                         SortOrder = 0,
-                        Inherited = false,                        
+                        Inherited = false,
                         Properties = new []
                         {
                             new PropertyTypeBasic
-                            {                                
+                            {
                                 Alias = "property1",
                                 Description = "this is property 1",
                                 Inherited = false,
@@ -1149,7 +1079,7 @@ namespace Umbraco.Tests.Models.Mapping
             return new MediaTypeSave
             {
                 Alias = "test",
-                AllowAsRoot = true,                
+                AllowAsRoot = true,
                 AllowedContentTypes = new[] { 666, 667 },
                 Description = "hello world",
                 Icon = "tree-icon",
@@ -1245,11 +1175,11 @@ namespace Umbraco.Tests.Models.Mapping
                         Id = 987,
                         Name = "Tab 1",
                         SortOrder = 0,
-                        Inherited = false,                        
+                        Inherited = false,
                         Properties = new[]
                         {
                             new PropertyTypeBasic
-                            {                                
+                            {
                                 Alias = "property1",
                                 Description = "this is property 1",
                                 Inherited = false,
@@ -1269,11 +1199,11 @@ namespace Umbraco.Tests.Models.Mapping
                         Id = 894,
                         Name = "Tab 2",
                         SortOrder = 0,
-                        Inherited = true,                        
+                        Inherited = true,
                         Properties = new[]
                         {
                             new PropertyTypeBasic
-                            {                                
+                            {
                                 Alias = "parentProperty",
                                 Description = "this is a property from the parent",
                                 Inherited = true,
@@ -1282,12 +1212,12 @@ namespace Umbraco.Tests.Models.Mapping
                                 {
                                     Mandatory = false,
                                     Pattern = ""
-                                },                                
+                                },
                                 SortOrder = 0,
                                 DataTypeId = 555
                             }
                         }
-                        
+
                     }
                 }
 

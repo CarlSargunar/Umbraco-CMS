@@ -1,45 +1,57 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Security;
-using AutoMapper;
 using Microsoft.AspNet.Identity;
-using Microsoft.Owin;
+using Umbraco.Core.Configuration;
+using Umbraco.Core.Exceptions;
+using Umbraco.Core.Mapping;
+using Umbraco.Core.Models;
 using Umbraco.Core.Models.Identity;
 using Umbraco.Core.Models.Membership;
 using Umbraco.Core.Services;
+using IUser = Umbraco.Core.Models.Membership.IUser;
+using Task = System.Threading.Tasks.Task;
 
 namespace Umbraco.Core.Security
 {
-    public class BackOfficeUserStore : DisposableObject, 
-        IUserStore<BackOfficeIdentityUser, int>, 
-        IUserPasswordStore<BackOfficeIdentityUser, int>, 
-        IUserEmailStore<BackOfficeIdentityUser, int>, 
+    public class BackOfficeUserStore : DisposableObjectSlim,
+        IUserStore<BackOfficeIdentityUser, int>,
+        IUserPasswordStore<BackOfficeIdentityUser, int>,
+        IUserEmailStore<BackOfficeIdentityUser, int>,
         IUserLoginStore<BackOfficeIdentityUser, int>,
         IUserRoleStore<BackOfficeIdentityUser, int>,
         IUserSecurityStampStore<BackOfficeIdentityUser, int>,
         IUserLockoutStore<BackOfficeIdentityUser, int>,
-        IUserTwoFactorStore<BackOfficeIdentityUser, int>
+        IUserTwoFactorStore<BackOfficeIdentityUser, int>,
+        IUserSessionStore<BackOfficeIdentityUser, int>
 
-        //TODO: This would require additional columns/tables for now people will need to implement this on their own
-        //IUserPhoneNumberStore<BackOfficeIdentityUser, int>,
-        //TODO: To do this we need to implement IQueryable -  we'll have an IQuerable implementation soon with the UmbracoLinqPadDriver implementation
-        //IQueryableUserStore<BackOfficeIdentityUser, int>
+    // TODO: This would require additional columns/tables for now people will need to implement this on their own
+    //IUserPhoneNumberStore<BackOfficeIdentityUser, int>,
+    // TODO: To do this we need to implement IQueryable -  we'll have an IQuerable implementation soon with the UmbracoLinqPadDriver implementation
+    //IQueryableUserStore<BackOfficeIdentityUser, int>
     {
         private readonly IUserService _userService;
+        private readonly IMemberTypeService _memberTypeService;
+        private readonly IEntityService _entityService;
         private readonly IExternalLoginService _externalLoginService;
+        private readonly IGlobalSettings _globalSettings;
+        private readonly UmbracoMapper _mapper;
         private bool _disposed = false;
 
-        public BackOfficeUserStore(IUserService userService, IExternalLoginService externalLoginService, MembershipProviderBase usersMembershipProvider)
+        public BackOfficeUserStore(IUserService userService, IMemberTypeService memberTypeService, IEntityService entityService, IExternalLoginService externalLoginService, IGlobalSettings globalSettings, MembershipProviderBase usersMembershipProvider, UmbracoMapper mapper)
         {
             _userService = userService;
+            _memberTypeService = memberTypeService;
+            _entityService = entityService;
             _externalLoginService = externalLoginService;
+            _globalSettings = globalSettings;
             if (userService == null) throw new ArgumentNullException("userService");
             if (usersMembershipProvider == null) throw new ArgumentNullException("usersMembershipProvider");
             if (externalLoginService == null) throw new ArgumentNullException("externalLoginService");
+            _mapper = mapper;
 
             _userService = userService;
             _externalLoginService = externalLoginService;
@@ -51,7 +63,7 @@ namespace Umbraco.Core.Security
         }
 
         /// <summary>
-        /// Handles the disposal of resources. Derived from abstract class <see cref="DisposableObject"/> which handles common required locking logic.
+        /// Handles the disposal of resources. Derived from abstract class <see cref="DisposableObjectSlim"/> which handles common required locking logic.
         /// </summary>
         protected override void DisposeResources()
         {
@@ -66,43 +78,35 @@ namespace Umbraco.Core.Security
         public Task CreateAsync(BackOfficeIdentityUser user)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
-
-            var userType = _userService.GetUserTypeByAlias(
-                user.UserTypeAlias.IsNullOrWhiteSpace() ? _userService.GetDefaultMemberType() : user.UserTypeAlias);
-
-            var member = new User(userType)
-            {
-                DefaultToLiveEditing = false,
-                Email = user.Email,
-                Language = user.Culture ?? Configuration.GlobalSettings.DefaultUILanguage,
-                Name = user.Name,
-                Username = user.UserName,
-                StartContentId = user.StartContentId == 0 ? -1 : user.StartContentId,
-                StartMediaId = user.StartMediaId == 0 ? -1 : user.StartMediaId,
-                IsLockedOut = user.IsLockedOut,
-                IsApproved = true
-            };
-
-            UpdateMemberProperties(member, user);
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
             //the password must be 'something' it could be empty if authenticating
-            // with an external provider so we'll just generate one and prefix it, the 
+            // with an external provider so we'll just generate one and prefix it, the
             // prefix will help us determine if the password hasn't actually been specified yet.
-            if (member.RawPasswordValue.IsNullOrWhiteSpace())
+            //this will hash the guid with a salt so should be nicely random
+            var aspHasher = new PasswordHasher();
+            var emptyPasswordValue = Constants.Security.EmptyPasswordPrefix +
+                                      aspHasher.HashPassword(Guid.NewGuid().ToString("N"));
+
+            var userEntity = new User(user.Name, user.Email, user.UserName, emptyPasswordValue)
             {
-                //this will hash the guid with a salt so should be nicely random
-                var aspHasher = new PasswordHasher();
-                member.RawPasswordValue = "___UIDEMPTYPWORD__" +
-                    aspHasher.HashPassword(Guid.NewGuid().ToString("N"));
+                DefaultToLiveEditing = false,
+                Language = user.Culture ?? _globalSettings.DefaultUILanguage,
+                StartContentIds = user.StartContentIds ?? new int[] { },
+                StartMediaIds = user.StartMediaIds ?? new int[] { },
+                IsLockedOut = user.IsLockedOut,
+            };
 
-            }
-            _userService.Save(member);
+            UpdateMemberProperties(userEntity, user);
 
-            if (member.Id == 0) throw new DataException("Could not create the user, check logs for details");
+            // TODO: We should deal with Roles --> User Groups here which we currently are not doing
+
+            _userService.Save(userEntity);
+
+            if (!userEntity.HasIdentity) throw new DataException("Could not create the user, check logs for details");
 
             //re-assign id
-            user.Id = member.Id;
+            user.Id = userEntity.Id;
 
             return Task.FromResult(0);
         }
@@ -115,7 +119,7 @@ namespace Umbraco.Core.Security
         public async Task UpdateAsync(BackOfficeIdentityUser user)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
             var asInt = user.Id.TryConvertTo<int>();
             if (asInt == false)
@@ -126,17 +130,20 @@ namespace Umbraco.Core.Security
             var found = _userService.GetUserById(asInt.Result);
             if (found != null)
             {
+                // we have to remember whether Logins property is dirty, since the UpdateMemberProperties will reset it.
+                var isLoginsPropertyDirty = user.IsPropertyDirty("Logins");
+
                 if (UpdateMemberProperties(found, user))
                 {
                     _userService.Save(found);
                 }
 
-                if (user.LoginsChanged)
+                if (isLoginsPropertyDirty)
                 {
                     var logins = await GetLoginsAsync(user);
                     _externalLoginService.SaveUserLogins(found.Id, logins);
                 }
-            }           
+            }
         }
 
         /// <summary>
@@ -147,7 +154,7 @@ namespace Umbraco.Core.Security
         public Task DeleteAsync(BackOfficeIdentityUser user)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
             var asInt = user.Id.TryConvertTo<int>();
             if (asInt == false)
@@ -178,7 +185,8 @@ namespace Umbraco.Core.Security
             {
                 return null;
             }
-            return await Task.FromResult(AssignLoginsCallback(Mapper.Map<BackOfficeIdentityUser>(user)));
+
+            return await Task.FromResult(AssignLoginsCallback(_mapper.Map<BackOfficeIdentityUser>(user)));
         }
 
         /// <summary>
@@ -195,7 +203,7 @@ namespace Umbraco.Core.Security
                 return null;
             }
 
-            var result = AssignLoginsCallback(Mapper.Map<BackOfficeIdentityUser>(user));
+            var result = AssignLoginsCallback(_mapper.Map<BackOfficeIdentityUser>(user));
 
             return await Task.FromResult(result);
         }
@@ -208,8 +216,8 @@ namespace Umbraco.Core.Security
         public Task SetPasswordHashAsync(BackOfficeIdentityUser user, string passwordHash)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
-            if (passwordHash.IsNullOrWhiteSpace()) throw new ArgumentNullException("passwordHash");
+            if (user == null) throw new ArgumentNullException(nameof(user));
+            if (string.IsNullOrEmpty(passwordHash)) throw new ArgumentNullOrEmptyException(nameof(passwordHash));
 
             user.PasswordHash = passwordHash;
 
@@ -224,7 +232,7 @@ namespace Umbraco.Core.Security
         public Task<string> GetPasswordHashAsync(BackOfficeIdentityUser user)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
             return Task.FromResult(user.PasswordHash);
         }
@@ -237,9 +245,9 @@ namespace Umbraco.Core.Security
         public Task<bool> HasPasswordAsync(BackOfficeIdentityUser user)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
-            return Task.FromResult(user.PasswordHash.IsNullOrWhiteSpace() == false);
+            return Task.FromResult(string.IsNullOrEmpty(user.PasswordHash) == false);
         }
 
         /// <summary>
@@ -250,7 +258,7 @@ namespace Umbraco.Core.Security
         public Task SetEmailAsync(BackOfficeIdentityUser user, string email)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             if (email.IsNullOrWhiteSpace()) throw new ArgumentNullException("email");
 
             user.Email = email;
@@ -266,7 +274,7 @@ namespace Umbraco.Core.Security
         public Task<string> GetEmailAsync(BackOfficeIdentityUser user)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
             return Task.FromResult(user.Email);
         }
@@ -279,7 +287,9 @@ namespace Umbraco.Core.Security
         public Task<bool> GetEmailConfirmedAsync(BackOfficeIdentityUser user)
         {
             ThrowIfDisposed();
-            throw new NotImplementedException();
+            if (user == null) throw new ArgumentNullException(nameof(user));
+
+            return Task.FromResult(user.EmailConfirmed);
         }
 
         /// <summary>
@@ -290,7 +300,8 @@ namespace Umbraco.Core.Security
         public Task SetEmailConfirmedAsync(BackOfficeIdentityUser user, bool confirmed)
         {
             ThrowIfDisposed();
-            throw new NotImplementedException();
+            user.EmailConfirmed = confirmed;
+            return Task.FromResult(0);
         }
 
         /// <summary>
@@ -304,7 +315,7 @@ namespace Umbraco.Core.Security
             var user = _userService.GetByEmail(email);
             var result = user == null
                 ? null
-                : Mapper.Map<BackOfficeIdentityUser>(user);
+                : _mapper.Map<BackOfficeIdentityUser>(user);
 
             return Task.FromResult(AssignLoginsCallback(result));
         }
@@ -317,7 +328,7 @@ namespace Umbraco.Core.Security
         public Task AddLoginAsync(BackOfficeIdentityUser user, UserLoginInfo login)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             if (login == null) throw new ArgumentNullException("login");
 
             var logins = user.Logins;
@@ -336,7 +347,7 @@ namespace Umbraco.Core.Security
         public Task RemoveLoginAsync(BackOfficeIdentityUser user, UserLoginInfo login)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             if (login == null) throw new ArgumentNullException("login");
 
             var provider = login.LoginProvider;
@@ -356,7 +367,7 @@ namespace Umbraco.Core.Security
         public Task<IList<UserLoginInfo>> GetLoginsAsync(BackOfficeIdentityUser user)
         {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             return Task.FromResult((IList<UserLoginInfo>)
                 user.Logins.Select(l => new UserLoginInfo(l.LoginProvider, l.ProviderKey)).ToList());
         }
@@ -366,7 +377,7 @@ namespace Umbraco.Core.Security
         /// </summary>
         /// <returns/>
         public Task<BackOfficeIdentityUser> FindAsync(UserLoginInfo login)
-        {            
+        {
             ThrowIfDisposed();
             if (login == null) throw new ArgumentNullException("login");
 
@@ -374,12 +385,17 @@ namespace Umbraco.Core.Security
             var result = _externalLoginService.Find(login).ToArray();
             if (result.Any())
             {
-                //return the first member that matches the result
-                var output = (from l in result
-                            select _userService.GetUserById(l.UserId)
-                                into user
-                                where user != null
-                                  select Mapper.Map<BackOfficeIdentityUser>(user)).FirstOrDefault();
+                //return the first user that matches the result
+                BackOfficeIdentityUser output = null;
+                foreach (var l in result)
+                {
+                    var user = _userService.GetUserById(l.UserId);
+                    if (user != null)
+                    {
+                        output = _mapper.Map<BackOfficeIdentityUser>(user);
+                        break;
+                    }
+                }
 
                 return Task.FromResult(AssignLoginsCallback(output));
             }
@@ -389,71 +405,57 @@ namespace Umbraco.Core.Security
 
 
         /// <summary>
-        /// Adds a user to a role (section)
+        /// Adds a user to a role (user group)
         /// </summary>
         /// <param name="user"/><param name="roleName"/>
         /// <returns/>
         public Task AddToRoleAsync(BackOfficeIdentityUser user, string roleName)
-        {            
+        {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
+            if (string.IsNullOrWhiteSpace(roleName)) throw new ArgumentException("Value cannot be null or whitespace.", "roleName");
 
-            if (user.AllowedSections.InvariantContains(roleName)) return Task.FromResult(0);
-            
-            var asInt = user.Id.TryConvertTo<int>();
-            if (asInt == false)
+            var userRole = user.Roles.SingleOrDefault(r => r.RoleId == roleName);
+
+            if (userRole == null)
             {
-                throw new InvalidOperationException("The user id must be an integer to work with the Umbraco");
-            }
-
-            var found = _userService.GetUserById(asInt.Result);
-
-            if (found != null)
-            {
-                found.AddAllowedSection(roleName);
+                user.AddRole(roleName);
             }
 
             return Task.FromResult(0);
         }
 
         /// <summary>
-        /// Removes the role (allowed section) for the user
+        /// Removes the role (user group) for the user
         /// </summary>
         /// <param name="user"/><param name="roleName"/>
         /// <returns/>
         public Task RemoveFromRoleAsync(BackOfficeIdentityUser user, string roleName)
-        {            
+        {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
+            if (string.IsNullOrWhiteSpace(roleName)) throw new ArgumentException("Value cannot be null or whitespace.", "roleName");
 
-            if (user.AllowedSections.InvariantContains(roleName) == false) return Task.FromResult(0);
+            var userRole = user.Roles.SingleOrDefault(r => r.RoleId == roleName);
 
-            var asInt = user.Id.TryConvertTo<int>();
-            if (asInt == false)
+            if (userRole != null)
             {
-                throw new InvalidOperationException("The user id must be an integer to work with the Umbraco");
-            }
-
-            var found = _userService.GetUserById(asInt.Result);
-
-            if (found != null)
-            {
-                found.RemoveAllowedSection(roleName);
+                user.Roles.Remove(userRole);
             }
 
             return Task.FromResult(0);
         }
 
         /// <summary>
-        /// Returns the roles for this user
+        /// Returns the roles (user groups) for this user
         /// </summary>
         /// <param name="user"/>
         /// <returns/>
         public Task<IList<string>> GetRolesAsync(BackOfficeIdentityUser user)
-        {            
+        {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
-            return Task.FromResult((IList<string>)user.AllowedSections.ToList());
+            if (user == null) throw new ArgumentNullException(nameof(user));
+            return Task.FromResult((IList<string>)user.Roles.Select(x => x.RoleId).ToList());
         }
 
         /// <summary>
@@ -462,10 +464,10 @@ namespace Umbraco.Core.Security
         /// <param name="user"/><param name="roleName"/>
         /// <returns/>
         public Task<bool> IsInRoleAsync(BackOfficeIdentityUser user, string roleName)
-        {            
+        {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
-            return Task.FromResult(user.AllowedSections.InvariantContains(roleName));
+            if (user == null) throw new ArgumentNullException(nameof(user));
+            return Task.FromResult(user.Roles.Select(x => x.RoleId).InvariantContains(roleName));
         }
 
         /// <summary>
@@ -474,9 +476,9 @@ namespace Umbraco.Core.Security
         /// <param name="user"/><param name="stamp"/>
         /// <returns/>
         public Task SetSecurityStampAsync(BackOfficeIdentityUser user, string stamp)
-        {   
+        {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
             user.SecurityStamp = stamp;
             return Task.FromResult(0);
@@ -488,13 +490,13 @@ namespace Umbraco.Core.Security
         /// <param name="user"/>
         /// <returns/>
         public Task<string> GetSecurityStampAsync(BackOfficeIdentityUser user)
-        {            
+        {
             ThrowIfDisposed();
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
             //the stamp cannot be null, so if it is currently null then we'll just return a hash of the password
-            return Task.FromResult(user.SecurityStamp.IsNullOrWhiteSpace() 
-                ? user.PasswordHash.ToMd5()
+            return Task.FromResult(user.SecurityStamp.IsNullOrWhiteSpace()
+                ? user.PasswordHash.GenerateHash()
                 : user.SecurityStamp);
         }
 
@@ -530,18 +532,18 @@ namespace Umbraco.Core.Security
         }
 
         #region IUserLockoutStore
-        
+
         /// <summary>
         /// Returns the DateTimeOffset that represents the end of a user's lockout, any time in the past should be considered not locked out.
         /// </summary>
         /// <param name="user"/>
         /// <returns/>
         /// <remarks>
-        /// Currently we do not suport a timed lock out, when they are locked out, an admin will  have to reset the status
+        /// Currently we do not support a timed lock out, when they are locked out, an admin will  have to reset the status
         /// </remarks>
         public Task<DateTimeOffset> GetLockoutEndDateAsync(BackOfficeIdentityUser user)
         {
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
             return user.LockoutEndDateUtc.HasValue
                 ? Task.FromResult(DateTimeOffset.MaxValue)
@@ -553,9 +555,12 @@ namespace Umbraco.Core.Security
         /// </summary>
         /// <param name="user"/><param name="lockoutEnd"/>
         /// <returns/>
+        /// <remarks>
+        /// Currently we do not support a timed lock out, when they are locked out, an admin will  have to reset the status
+        /// </remarks>
         public Task SetLockoutEndDateAsync(BackOfficeIdentityUser user, DateTimeOffset lockoutEnd)
         {
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             user.LockoutEndDateUtc = lockoutEnd.UtcDateTime;
             return Task.FromResult(0);
         }
@@ -567,7 +572,7 @@ namespace Umbraco.Core.Security
         /// <returns/>
         public Task<int> IncrementAccessFailedCountAsync(BackOfficeIdentityUser user)
         {
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             user.AccessFailedCount++;
             return Task.FromResult(user.AccessFailedCount);
         }
@@ -579,7 +584,7 @@ namespace Umbraco.Core.Security
         /// <returns/>
         public Task ResetAccessFailedCountAsync(BackOfficeIdentityUser user)
         {
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             user.AccessFailedCount = 0;
             return Task.FromResult(0);
         }
@@ -592,7 +597,7 @@ namespace Umbraco.Core.Security
         /// <returns/>
         public Task<int> GetAccessFailedCountAsync(BackOfficeIdentityUser user)
         {
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             return Task.FromResult(user.AccessFailedCount);
         }
 
@@ -603,7 +608,7 @@ namespace Umbraco.Core.Security
         /// <returns/>
         public Task<bool> GetLockoutEnabledAsync(BackOfficeIdentityUser user)
         {
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             return Task.FromResult(user.LockoutEnabled);
         }
 
@@ -614,28 +619,55 @@ namespace Umbraco.Core.Security
         /// <returns/>
         public Task SetLockoutEnabledAsync(BackOfficeIdentityUser user, bool enabled)
         {
-            if (user == null) throw new ArgumentNullException("user");
+            if (user == null) throw new ArgumentNullException(nameof(user));
             user.LockoutEnabled = enabled;
             return Task.FromResult(0);
         }
         #endregion
 
-        private bool UpdateMemberProperties(Models.Membership.IUser user, BackOfficeIdentityUser identityUser)
+        private bool UpdateMemberProperties(IUser user, BackOfficeIdentityUser identityUser)
         {
             var anythingChanged = false;
-            //don't assign anything if nothing has changed as this will trigger
-            //the track changes of the model
-            if (user.Name != identityUser.Name && identityUser.Name.IsNullOrWhiteSpace() == false)
+
+            //don't assign anything if nothing has changed as this will trigger the track changes of the model
+
+            if (identityUser.IsPropertyDirty("LastLoginDateUtc")
+                || (user.LastLoginDate != default(DateTime) && identityUser.LastLoginDateUtc.HasValue == false)
+                || identityUser.LastLoginDateUtc.HasValue && user.LastLoginDate.ToUniversalTime() != identityUser.LastLoginDateUtc.Value)
+            {
+                anythingChanged = true;
+                //if the LastLoginDate is being set to MinValue, don't convert it ToLocalTime
+                var dt = identityUser.LastLoginDateUtc == DateTime.MinValue ? DateTime.MinValue : identityUser.LastLoginDateUtc.Value.ToLocalTime();
+                user.LastLoginDate = dt;
+            }
+            if (identityUser.IsPropertyDirty("LastPasswordChangeDateUtc")
+                || (user.LastPasswordChangeDate != default(DateTime) && identityUser.LastPasswordChangeDateUtc.HasValue == false)
+                || identityUser.LastPasswordChangeDateUtc.HasValue && user.LastPasswordChangeDate.ToUniversalTime() != identityUser.LastPasswordChangeDateUtc.Value)
+            {
+                anythingChanged = true;
+                user.LastPasswordChangeDate = identityUser.LastPasswordChangeDateUtc.Value.ToLocalTime();
+            }
+            if (identityUser.IsPropertyDirty("EmailConfirmed")
+                || (user.EmailConfirmedDate.HasValue && user.EmailConfirmedDate.Value != default(DateTime) && identityUser.EmailConfirmed == false)
+                || ((user.EmailConfirmedDate.HasValue == false || user.EmailConfirmedDate.Value == default(DateTime)) && identityUser.EmailConfirmed))
+            {
+                anythingChanged = true;
+                user.EmailConfirmedDate = identityUser.EmailConfirmed ? (DateTime?)DateTime.Now : null;
+            }
+            if (identityUser.IsPropertyDirty("Name")
+                && user.Name != identityUser.Name && identityUser.Name.IsNullOrWhiteSpace() == false)
             {
                 anythingChanged = true;
                 user.Name = identityUser.Name;
             }
-            if (user.Email != identityUser.Email && identityUser.Email.IsNullOrWhiteSpace() == false)
+            if (identityUser.IsPropertyDirty("Email")
+                && user.Email != identityUser.Email && identityUser.Email.IsNullOrWhiteSpace() == false)
             {
                 anythingChanged = true;
                 user.Email = identityUser.Email;
             }
-            if (user.FailedPasswordAttempts != identityUser.AccessFailedCount)
+            if (identityUser.IsPropertyDirty("AccessFailedCount")
+                && user.FailedPasswordAttempts != identityUser.AccessFailedCount)
             {
                 anythingChanged = true;
                 user.FailedPasswordAttempts = identityUser.AccessFailedCount;
@@ -644,52 +676,89 @@ namespace Umbraco.Core.Security
             {
                 anythingChanged = true;
                 user.IsLockedOut = identityUser.IsLockedOut;
+
+                if (user.IsLockedOut)
+                {
+                    //need to set the last lockout date
+                    user.LastLockoutDate = DateTime.Now;
+                }
+
             }
-            if (user.Username != identityUser.UserName && identityUser.UserName.IsNullOrWhiteSpace() == false)
+            if (identityUser.IsPropertyDirty("UserName")
+                && user.Username != identityUser.UserName && identityUser.UserName.IsNullOrWhiteSpace() == false)
             {
                 anythingChanged = true;
                 user.Username = identityUser.UserName;
             }
-            if (user.RawPasswordValue != identityUser.PasswordHash && identityUser.PasswordHash.IsNullOrWhiteSpace() == false)
+            if (identityUser.IsPropertyDirty("PasswordHash")
+                && user.RawPasswordValue != identityUser.PasswordHash && identityUser.PasswordHash.IsNullOrWhiteSpace() == false)
             {
                 anythingChanged = true;
                 user.RawPasswordValue = identityUser.PasswordHash;
             }
 
-            if (user.Language != identityUser.Culture && identityUser.Culture.IsNullOrWhiteSpace() == false)
+            if (identityUser.IsPropertyDirty("Culture")
+                && user.Language != identityUser.Culture && identityUser.Culture.IsNullOrWhiteSpace() == false)
             {
                 anythingChanged = true;
                 user.Language = identityUser.Culture;
             }
-            if (user.StartMediaId != identityUser.StartMediaId)
+            if (identityUser.IsPropertyDirty("StartMediaIds")
+                && user.StartMediaIds.UnsortedSequenceEqual(identityUser.StartMediaIds) == false)
             {
                 anythingChanged = true;
-                user.StartMediaId = identityUser.StartMediaId;
+                user.StartMediaIds = identityUser.StartMediaIds;
             }
-            if (user.StartContentId != identityUser.StartContentId)
+            if (identityUser.IsPropertyDirty("StartContentIds")
+                && user.StartContentIds.UnsortedSequenceEqual(identityUser.StartContentIds) == false)
             {
                 anythingChanged = true;
-                user.StartContentId = identityUser.StartContentId;
+                user.StartContentIds = identityUser.StartContentIds;
             }
             if (user.SecurityStamp != identityUser.SecurityStamp)
             {
                 anythingChanged = true;
                 user.SecurityStamp = identityUser.SecurityStamp;
             }
-            
-            if (user.AllowedSections.ContainsAll(identityUser.AllowedSections) == false
-                || identityUser.AllowedSections.ContainsAll(user.AllowedSections) == false)
+
+            // TODO: Fix this for Groups too
+            if (identityUser.IsPropertyDirty("Roles") || identityUser.IsPropertyDirty("Groups"))
             {
-                anythingChanged = true;
-                foreach (var allowedSection in user.AllowedSections)
+                var userGroupAliases = user.Groups.Select(x => x.Alias).ToArray();
+
+                var identityUserRoles = identityUser.Roles.Select(x => x.RoleId).ToArray();
+                var identityUserGroups = identityUser.Groups.Select(x => x.Alias).ToArray();
+
+                var combinedAliases = identityUserRoles.Union(identityUserGroups).ToArray();
+
+                if (userGroupAliases.ContainsAll(combinedAliases) == false
+                    || combinedAliases.ContainsAll(userGroupAliases) == false)
                 {
-                    user.RemoveAllowedSection(allowedSection);
-                }
-                foreach (var allowedApplication in identityUser.AllowedSections)
-                {
-                    user.AddAllowedSection(allowedApplication);
+                    anythingChanged = true;
+
+                    //clear out the current groups (need to ToArray since we are modifying the iterator)
+                    user.ClearGroups();
+
+                    //go lookup all these groups
+                    var groups = _userService.GetUserGroupsByAlias(combinedAliases).Select(x => x.ToReadOnlyGroup()).ToArray();
+
+                    //use all of the ones assigned and add them
+                    foreach (var group in groups)
+                    {
+                        user.AddGroup(group);
+                    }
+
+                    //re-assign
+                    identityUser.Groups = groups;
                 }
             }
+
+            //we should re-set the calculated start nodes
+            identityUser.CalculatedMediaStartNodeIds = user.CalculateMediaStartNodeIds(_entityService);
+            identityUser.CalculatedContentStartNodeIds = user.CalculateContentStartNodeIds(_entityService);
+
+            //reset all changes
+            identityUser.ResetDirtyProperties(false);
 
             return anythingChanged;
         }
@@ -701,6 +770,14 @@ namespace Umbraco.Core.Security
                 throw new ObjectDisposedException(GetType().Name);
         }
 
-      
+        public Task<bool> ValidateSessionIdAsync(int userId, string sessionId)
+        {
+            Guid guidSessionId;
+            if (Guid.TryParse(sessionId, out guidSessionId))
+            {
+                return Task.FromResult(_userService.ValidateLoginSession(userId, guidSessionId));
+            }
+            return Task.FromResult(false);
+        }
     }
 }

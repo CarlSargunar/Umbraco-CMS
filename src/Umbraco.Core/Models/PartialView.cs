@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Runtime.Serialization;
-using Umbraco.Core.Services;
 
 namespace Umbraco.Core.Models
 {
-  
     /// <summary>
     /// Represents a Partial View file
     /// </summary>
@@ -12,14 +10,16 @@ namespace Umbraco.Core.Models
     [DataContract(IsReference = true)]
     public class PartialView : File, IPartialView
     {
-        public PartialView(string path)
-            : this(path, null)
+        public PartialView(PartialViewType viewType, string path)
+            : this(viewType, path, null)
         { }
 
-        internal PartialView(string path, Func<File, string> getFileContent)
+        internal PartialView(PartialViewType viewType, string path, Func<File, string> getFileContent)
             : base(path, getFileContent)
-        { }
+        {
+            ViewType = viewType;
+        }
 
-        internal PartialViewType ViewType { get; set; }
+        public PartialViewType ViewType { get; set; }
     }
 }

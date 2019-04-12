@@ -1,6 +1,6 @@
 //this controller simply tells the dialogs service to open a memberPicker window
 //with a specified callback, this callback will receive an object with a selection on it
-function memberPickerController($scope, dialogService, entityResource, $log, iconHelper, angularHelper){
+function memberPickerController($scope, entityResource, iconHelper, angularHelper, editorService){
 
     function trim(str, chr) {
         var rgxtrim = (!chr) ? new RegExp('^\\s+|\\s+$', 'g') : new RegExp('^' + chr + '+|' + chr + '+$', 'g');
@@ -8,6 +8,7 @@ function memberPickerController($scope, dialogService, entityResource, $log, ico
     }
 
     $scope.renderModel = [];
+    $scope.allowRemove = true;
 
     var dialogOptions = {
         multiPicker: false,
@@ -37,27 +38,24 @@ function memberPickerController($scope, dialogService, entityResource, $log, ico
         angular.extend(dialogOptions, $scope.model.config);
     }
 
-    $scope.openMemberPicker = function() {
-       $scope.memberPickerOverlay = dialogOptions;
-       $scope.memberPickerOverlay.view = "memberPicker";
-       $scope.memberPickerOverlay.show = true;
+    $scope.openMemberPicker = function () {
 
-       $scope.memberPickerOverlay.submit = function(model) {
+        var memberPicker = dialogOptions;
 
-          if (model.selection) {
-             _.each(model.selection, function(item, i) {
-                $scope.add(item);
-             });
-          }
+        memberPicker.submit = function (model) {
+            if (model.selection) {
+                _.each(model.selection, function (item, i) {
+                    $scope.add(item);
+                });
+            }
+            editorService.close();
+        };
 
-          $scope.memberPickerOverlay.show = false;
-          $scope.memberPickerOverlay = null;
-       };
+        memberPicker.close = function () {
+            editorService.close();
+        };
 
-       $scope.memberPickerOverlay.close = function(oldModel) {
-          $scope.memberPickerOverlay.show = false;
-          $scope.memberPickerOverlay = null;
-       };
+        editorService.treePicker(memberPicker);
 
     };
 
@@ -67,12 +65,19 @@ function memberPickerController($scope, dialogService, entityResource, $log, ico
 
     $scope.add = function (item) {
         var currIds = _.map($scope.renderModel, function (i) {
-            return i.id;
+            if ($scope.model.config.idType === "udi") {
+                return i.udi;
+            }
+            else {
+                return i.id;
+            }            
         });
 
-        if (currIds.indexOf(item.id) < 0) {
+        var itemId = $scope.model.config.idType === "udi" ? item.udi : item.id;
+
+        if (currIds.indexOf(itemId) < 0) {
             item.icon = iconHelper.convertFromLegacyIcon(item.icon);
-            $scope.renderModel.push({name: item.name, id: item.id, icon: item.icon});
+            $scope.renderModel.push({ name: item.name, id: item.id, udi: item.udi, icon: item.icon});
         }
     };
 
@@ -82,7 +87,12 @@ function memberPickerController($scope, dialogService, entityResource, $log, ico
 
     var unsubscribe = $scope.$on("formSubmitting", function (ev, args) {
         var currIds = _.map($scope.renderModel, function (i) {
-            return i.id;
+            if ($scope.model.config.idType === "udi") {
+                return i.udi;
+            }
+            else {
+                return i.id;
+            }   
         });
         $scope.model.value = trim(currIds.join(), ",");
     });
@@ -96,8 +106,9 @@ function memberPickerController($scope, dialogService, entityResource, $log, ico
     var modelIds = $scope.model.value ? $scope.model.value.split(',') : [];
     entityResource.getByIds(modelIds, "Member").then(function (data) {
         _.each(data, function (item, i) {
-            item.icon = iconHelper.convertFromLegacyIcon(item.icon);
-            $scope.renderModel.push({ name: item.name, id: item.id, icon: item.icon });
+            // set default icon if it's missing
+            item.icon = (item.icon) ? iconHelper.convertFromLegacyIcon(item.icon) : "icon-user";
+            $scope.renderModel.push({ name: item.name, id: item.id, udi: item.udi, icon: item.icon });
         });
     });
 }

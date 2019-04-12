@@ -1,15 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Umbraco.Core;
+﻿using Umbraco.Core;
+using Umbraco.Core.Logging;
 using Umbraco.Core.PropertyEditors;
 
 namespace Umbraco.Web.PropertyEditors
 {
-    [PropertyEditor(Constants.PropertyEditors.MemberPickerAlias, "Member Picker", PropertyEditorValueTypes.Integer, "memberpicker", Group = "People", Icon = "icon-user")]
-    public class MemberPickerPropertyEditor : PropertyEditor
+    [DataEditor(Constants.PropertyEditors.Aliases.MemberPicker, "Member Picker", "memberpicker", ValueType = ValueTypes.String, Group = "People", Icon = "icon-user")]
+    public class MemberPickerPropertyEditor : DataEditor
     {
+        public MemberPickerPropertyEditor(ILogger logger)
+            : base(logger)
+        { }
+
+        protected override IConfigurationEditor CreateConfigurationEditor() => new MemberPickerConfiguration();
     }
 }

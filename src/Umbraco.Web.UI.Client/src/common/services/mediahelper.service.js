@@ -4,7 +4,7 @@
 * @description A helper object used for dealing with media items
 **/
 function mediaHelper(umbRequestHelper) {
-    
+
     //container of fileresolvers
     var _mediaFileResolvers = {};
 
@@ -45,7 +45,7 @@ function mediaHelper(umbRequestHelper) {
 
                 //this performs a simple check to see if we have a media file as value
                 //it doesnt catch everything, but better then nothing
-                if (angular.isString(item.value) &&  item.value.indexOf(mediaRoot) === 0) {
+                if (angular.isString(item.value) && item.value.indexOf(mediaRoot) === 0) {
                     return true;
                 }
 
@@ -66,7 +66,7 @@ function mediaHelper(umbRequestHelper) {
             });
 
             //for now we'll just return the first image in the collection.
-            //TODO: we should enable returning many to be displayed in the picker if the uploader supports many.
+            // TODO: we should enable returning many to be displayed in the picker if the uploader supports many.
             if (mediaVal.length && mediaVal.length > 0) {
                 if (!options.imageOnly || (options.imageOnly === true && mediaVal[0].isImage)) {
                     return mediaVal[0].file;
@@ -75,7 +75,7 @@ function mediaHelper(umbRequestHelper) {
 
             return "";
         },
-        
+
         /**
          * @ngdoc function
          * @name umbraco.services.mediaHelper#getImagePropertyValue
@@ -125,7 +125,7 @@ function mediaHelper(umbRequestHelper) {
             return "";
         },
 
-        registerFileResolver: function(propertyEditorAlias, func){
+        registerFileResolver: function (propertyEditorAlias, func) {
             _mediaFileResolvers[propertyEditorAlias] = func;
         },
 
@@ -141,8 +141,8 @@ function mediaHelper(umbRequestHelper) {
          * @param {object} mediaEntity A media Entity returned from the entityResource
          * @param {boolean} thumbnail Whether to return the thumbnail url or normal url
          */
-        resolveFileFromEntity : function(mediaEntity, thumbnail) {
-            
+        resolveFileFromEntity: function (mediaEntity, thumbnail) {
+
             if (!angular.isObject(mediaEntity.metaData)) {
                 throw "Cannot resolve the file url from the mediaEntity, it does not contain the required metaData";
             }
@@ -179,67 +179,67 @@ function mediaHelper(umbRequestHelper) {
          * @param {boolean} thumbnail Whether to return the thumbnail url or normal url
          */
         /*jshint loopfunc: true */
-        resolveFile : function(mediaItem, thumbnail){
-            
-            function iterateProps(props){
+        resolveFile: function (mediaItem, thumbnail) {
+
+            function iterateProps(props) {
                 var res = null;
-                for(var resolver in _mediaFileResolvers) {
-                    var property = _.find(props, function(prop){ return prop.editor === resolver; });
-                    if(property){
+                for (var resolver in _mediaFileResolvers) {
+                    var property = _.find(props, function (prop) { return prop.editor === resolver; });
+                    if (property) {
                         res = _mediaFileResolvers[resolver](property, mediaItem, thumbnail);
                         break;
                     }
                 }
 
-                return res;    
+                return res;
             }
 
             //we either have properties raw on the object, or spread out on tabs
             var result = "";
-            if(mediaItem.properties){
+            if (mediaItem.properties) {
                 result = iterateProps(mediaItem.properties);
-            }else if(mediaItem.tabs){
-                for(var tab in mediaItem.tabs) {
-                    if(mediaItem.tabs[tab].properties){
+            } else if (mediaItem.tabs) {
+                for (var tab in mediaItem.tabs) {
+                    if (mediaItem.tabs[tab].properties) {
                         result = iterateProps(mediaItem.tabs[tab].properties);
-                        if(result){
+                        if (result) {
                             break;
                         }
                     }
                 }
             }
-            return result;            
+            return result;
         },
 
         /*jshint loopfunc: true */
-        hasFilePropertyType : function(mediaItem){
-           function iterateProps(props){
-               var res = false;
-               for(var resolver in _mediaFileResolvers) {
-                   var property = _.find(props, function(prop){ return prop.editor === resolver; });
-                   if(property){
-                       res = true;
-                       break;
-                   }
-               }
-               return res;
-           }
+        hasFilePropertyType: function (mediaItem) {
+            function iterateProps(props) {
+                var res = false;
+                for (var resolver in _mediaFileResolvers) {
+                    var property = _.find(props, function (prop) { return prop.editor === resolver; });
+                    if (property) {
+                        res = true;
+                        break;
+                    }
+                }
+                return res;
+            }
 
-           //we either have properties raw on the object, or spread out on tabs
-           var result = false;
-           if(mediaItem.properties){
-               result = iterateProps(mediaItem.properties);
-           }else if(mediaItem.tabs){
-               for(var tab in mediaItem.tabs) {
-                   if(mediaItem.tabs[tab].properties){
-                       result = iterateProps(mediaItem.tabs[tab].properties);
-                       if(result){
-                           break;
-                       }
-                   }
-               }
-           }
-           return result;
+            //we either have properties raw on the object, or spread out on tabs
+            var result = false;
+            if (mediaItem.properties) {
+                result = iterateProps(mediaItem.properties);
+            } else if (mediaItem.tabs) {
+                for (var tab in mediaItem.tabs) {
+                    if (mediaItem.tabs[tab].properties) {
+                        result = iterateProps(mediaItem.tabs[tab].properties);
+                        if (result) {
+                            break;
+                        }
+                    }
+                }
+            }
+            return result;
         },
 
         /**
@@ -307,10 +307,7 @@ function mediaHelper(umbRequestHelper) {
             var thumbnailUrl = umbRequestHelper.getApiUrl(
                 "imagesApiBaseUrl",
                 "GetBigThumbnail",
-                [{ originalImagePath: imagePath }]);
-
-            //var ext = imagePath.substr(imagePath.lastIndexOf('.'));
-            //return imagePath.substr(0, imagePath.lastIndexOf('.')) + "_big-thumb" + ".jpg";
+                [{ originalImagePath: imagePath }]) + '&rnd=' + Math.random();
 
             return thumbnailUrl;
         },
@@ -331,7 +328,7 @@ function mediaHelper(umbRequestHelper) {
             if (!imagePath) {
                 return false;
             }
-            
+
             var lowered = imagePath.toLowerCase();
             var ext = lowered.substr(lowered.lastIndexOf(".") + 1);
             return ("," + Umbraco.Sys.ServerVariables.umbracoSettings.imageFileTypes + ",").indexOf("," + ext + ",") !== -1;
@@ -348,24 +345,50 @@ function mediaHelper(umbRequestHelper) {
          *
          * @param {string} file types, ex: jpg,png,tiff
          */
-        formatFileTypes: function(fileTypes) {
+        formatFileTypes: function (fileTypes) {
 
-           var fileTypesArray = fileTypes.split(',');
-           var newFileTypesArray = [];
+            var fileTypesArray = fileTypes.split(',');
+            var newFileTypesArray = [];
 
-           for (var i = 0; i < fileTypesArray.length; i++) {
-              var fileType = fileTypesArray[i];
+            for (var i = 0; i < fileTypesArray.length; i++) {
+                var fileType = fileTypesArray[i].trim();
 
-              if (fileType.indexOf(".") !== 0) {
-                 fileType = ".".concat(fileType);
-              }
+                if (!fileType) {
+                    continue;
+                }
 
-              newFileTypesArray.push(fileType);
-           }
+                if (fileType.indexOf(".") !== 0) {
+                    fileType = ".".concat(fileType);
+                }
 
-           return newFileTypesArray.join(",");
+                newFileTypesArray.push(fileType);
+            }
 
+            return newFileTypesArray.join(",");
+
+        },
+
+        /**
+         * @ngdoc function
+         * @name umbraco.services.mediaHelper#getFileExtension
+         * @methodOf umbraco.services.mediaHelper
+         * @function
+         *
+         * @description
+         * Returns file extension
+         *
+         * @param {string} filePath File path, ex /media/1234/my-image.jpg
+         */
+        getFileExtension: function (filePath) {
+
+            if (!filePath) {
+                return false;
+            }
+
+            var lowered = filePath.toLowerCase();
+            var ext = lowered.substr(lowered.lastIndexOf(".") + 1);
+            return ext;
         }
-        
+
     };
-}angular.module('umbraco.services').factory('mediaHelper', mediaHelper);
+} angular.module('umbraco.services').factory('mediaHelper', mediaHelper);

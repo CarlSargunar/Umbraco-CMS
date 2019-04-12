@@ -1,178 +1,120 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Umbraco.Core.Configuration;
+using Umbraco.Core;
 using Umbraco.Core.IO;
-using Umbraco.Core.Logging;
-using Umbraco.Core.Media;
 using Umbraco.Core.Models.Editors;
 using Umbraco.Core.PropertyEditors;
-using Umbraco.Web.Models.ContentEditing;
-using umbraco;
-using umbraco.cms.businesslogic.Files;
-using Umbraco.Core;
 
 namespace Umbraco.Web.PropertyEditors
 {
     /// <summary>
-    /// The editor for the file upload property editor
+    /// The value editor for the file upload property editor.
     /// </summary>
-    internal class FileUploadPropertyValueEditor : PropertyValueEditorWrapper
+    internal class FileUploadPropertyValueEditor : DataValueEditor
     {
-        public FileUploadPropertyValueEditor(PropertyValueEditor wrapped) : base(wrapped)
+        private readonly IMediaFileSystem _mediaFileSystem;
+
+        public FileUploadPropertyValueEditor(DataEditorAttribute attribute, IMediaFileSystem mediaFileSystem)
+            : base(attribute)
         {
+            _mediaFileSystem = mediaFileSystem ?? throw new ArgumentNullException(nameof(mediaFileSystem));
         }
 
         /// <summary>
-        /// Overrides the deserialize value so that we can save the file accordingly
+        /// Converts the value received from the editor into the value can be stored in the database.
         /// </summary>
-        /// <param name="editorValue">
-        /// This is value passed in from the editor. We normally don't care what the editorValue.Value is set to because
-        /// we are more interested in the files collection associated with it, however we do care about the value if we 
-        /// are clearing files. By default the editorValue.Value will just be set to the name of the file (but again, we
-        /// just ignore this and deal with the file collection in editorValue.AdditionalData.ContainsKey("files") )
-        /// </param>
-        /// <param name="currentValue">
-        /// The current value persisted for this property. This will allow us to determine if we want to create a new
-        /// file path or use the existing file path.
-        /// </param>
-        /// <returns></returns>
-        public override object ConvertEditorToDb(ContentPropertyData editorValue, object currentValue)
+        /// <param name="editorValue">The value received from the editor.</param>
+        /// <param name="currentValue">The current value of the property</param>
+        /// <returns>The converted value.</returns>
+        /// <remarks>
+        /// <para>The <paramref name="currentValue"/> is used to re-use the folder, if possible.</para>
+        /// <para>The <paramref name="editorValue"/> is value passed in from the editor. We normally don't care what
+        /// the editorValue.Value is set to because we are more interested in the files collection associated with it,
+        /// however we do care about the value if we are clearing files. By default the editorValue.Value will just
+        /// be set to the name of the file - but again, we just ignore this and deal with the file collection in
+        /// editorValue.AdditionalData.ContainsKey("files")</para>
+        /// <para>We only process ONE file. We understand that the current value may contain more than one file,
+        /// and that more than one file may be uploaded, so we take care of them all, but we only store ONE file.
+        /// Other places (FileUploadPropertyEditor...) do NOT deal with multiple files, and our logic for reusing
+        /// folders would NOT work, etc.</para>
+        /// </remarks>
+        public override object FromEditor(ContentPropertyData editorValue, object currentValue)
         {
-            if (currentValue == null)
+            var currentPath = currentValue as string;
+            if (!currentPath.IsNullOrWhiteSpace())
+                currentPath = _mediaFileSystem.GetRelativePath(currentPath);
+
+            string editorFile = null;
+            if (editorValue.Value != null)
             {
-                currentValue = string.Empty;
+                editorFile = editorValue.Value as string;
             }
 
-            //if the value is the same then just return the current value so we don't re-process everything
-            if (string.IsNullOrEmpty(currentValue.ToString()) == false && editorValue.Value == currentValue.ToString())
+            // ensure we have the required guids
+            var cuid = editorValue.ContentKey;
+            if (cuid == Guid.Empty) throw new Exception("Invalid content key.");
+            var puid = editorValue.PropertyTypeKey;
+            if (puid == Guid.Empty) throw new Exception("Invalid property type key.");
+
+            var uploads = editorValue.Files;
+            if (uploads == null) throw new Exception("Invalid files.");
+            var file = uploads.Length > 0 ? uploads[0] : null;
+
+            if (file == null) // not uploading a file
             {
-                return currentValue;
-            }
-
-            //check the editorValue value to see if we need to clear the files or not.
-            var clear = false;
-            var json = editorValue.Value as JObject;
-            if (json != null && json["clearFiles"] != null && json["clearFiles"].Value<bool>())
-            {
-                clear = json["clearFiles"].Value<bool>();
-            }
-
-            var currentPersistedValues = new string[] { };
-            if (string.IsNullOrEmpty(currentValue.ToString()) == false)
-            {
-                currentPersistedValues = currentValue.ToString().Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-            }
-
-            var newValue = new List<string>();
-
-            var fs = FileSystemProviderManager.Current.GetFileSystemProvider<MediaFileSystem>();
-
-            if (clear)
-            {
-                //Remove any files that are saved for this item
-                foreach (var toRemove in currentPersistedValues)
+                // if editorFile is empty then either there was nothing to begin with,
+                // or it has been cleared and we need to remove the file - else the
+                // value is unchanged.
+                if (string.IsNullOrWhiteSpace(editorFile) && string.IsNullOrWhiteSpace(currentPath) == false)
                 {
-                    fs.DeleteFile(fs.GetRelativePath(toRemove), true);
+                    _mediaFileSystem.DeleteFile(currentPath);
+                    return null; // clear
                 }
-                return "";
+
+                return currentValue; // unchanged
             }
 
-            //check for any files
-            if (editorValue.AdditionalData.ContainsKey("files"))
-            {
-                var files = editorValue.AdditionalData["files"] as IEnumerable<ContentItemFile>;
-                if (files != null)
-                {
-                    //now we just need to move the files to where they should be
-                    var filesAsArray = files.ToArray();
-                    //a list of all of the newly saved files so we can compare with the current saved files and remove the old ones
-                    var savedFilePaths = new List<string>();
-                    for (var i = 0; i < filesAsArray.Length; i++)
-                    {
-                        var file = filesAsArray[i];
+            // process the file
+            var filepath = editorFile == null ? null : ProcessFile(editorValue, file, currentPath, cuid, puid);
 
-                        //don't continue if this is not allowed!
-                        if (UploadFileTypeValidator.ValidateFileExtension(file.FileName) == false)
-                        {
-                            continue;
-                        }
+            // remove all temp files
+            foreach (var f in uploads)
+                File.Delete(f.TempFilePath);
 
-                        //TODO: ALl of this naming logic needs to be put into the ImageHelper and then we need to change ContentExtensions to do the same!
+            // remove current file if replaced
+            if (currentPath != filepath && string.IsNullOrWhiteSpace(currentPath) == false)
+                _mediaFileSystem.DeleteFile(currentPath);
 
-                        var currentPersistedFile = currentPersistedValues.Length >= (i + 1)
-                                                       ? currentPersistedValues[i]
-                                                       : "";
+            // update json and return
+            if (editorFile == null) return null;
+            return filepath == null ? string.Empty : _mediaFileSystem.GetUrl(filepath);
 
-                        var name = IOHelper.SafeFileName(file.FileName.Substring(file.FileName.LastIndexOf(IOHelper.DirSepChar) + 1, file.FileName.Length - file.FileName.LastIndexOf(IOHelper.DirSepChar) - 1).ToLower());
-
-                        var subfolder = UmbracoConfig.For.UmbracoSettings().Content.UploadAllowDirectories
-                                            ? currentPersistedFile.Replace(fs.GetUrl("/"), "").Split('/')[0]
-                                            : currentPersistedFile.Substring(currentPersistedFile.LastIndexOf("/", StringComparison.Ordinal) + 1).Split('-')[0];
-
-                        int subfolderId;
-                        var numberedFolder = int.TryParse(subfolder, out subfolderId)
-                                                 ? subfolderId.ToString(CultureInfo.InvariantCulture)
-                                                 : MediaSubfolderCounter.Current.Increment().ToString(CultureInfo.InvariantCulture);
-
-                        var fileName = UmbracoConfig.For.UmbracoSettings().Content.UploadAllowDirectories
-                                           ? Path.Combine(numberedFolder, name)
-                                           : numberedFolder + "-" + name;
-
-                        using (var fileStream = File.OpenRead(file.TempFilePath))
-                        {
-                            var umbracoFile = UmbracoMediaFile.Save(fileStream, fileName);
-
-                            if (umbracoFile.SupportsResizing)
-                            {
-                                var additionalSizes = new List<int>();
-                                //get the pre-vals value		
-                                var thumbs = editorValue.PreValues.FormatAsDictionary();
-                                if (thumbs.Any())
-                                {
-                                    var thumbnailSizes = thumbs.First().Value.Value;
-                                    // additional thumbnails configured as prevalues on the DataType		
-                                    foreach (var thumb in thumbnailSizes.Split(new[] { ";", "," }, StringSplitOptions.RemoveEmptyEntries))
-                                    {
-                                        int thumbSize;
-                                        if (thumb == "" || int.TryParse(thumb, out thumbSize) == false) continue;
-                                        additionalSizes.Add(thumbSize);
-                                    }
-                                }
-
-                                using (var image = Image.FromStream(fileStream))
-                                {
-                                    ImageHelper.GenerateMediaThumbnails(fs, fileName, umbracoFile.Extension, image, additionalSizes);
-                                }
-                            }
-
-                            newValue.Add(umbracoFile.Url);
-                            //add to the saved paths
-                            savedFilePaths.Add(umbracoFile.Url);
-                        }
-                        //now remove the temp file
-                        File.Delete(file.TempFilePath);
-                    }
-
-                    //Remove any files that are no longer saved for this item
-                    foreach (var toRemove in currentPersistedValues.Except(savedFilePaths))
-                    {
-                        fs.DeleteFile(fs.GetRelativePath(toRemove), true);
-                    }
-
-
-                    return string.Join(",", newValue);
-                }
-            }
-
-            //if we've made it here, we had no files to save and we were not clearing anything so just persist the same value we had before
-            return currentValue;
+            
         }
 
+        private string ProcessFile(ContentPropertyData editorValue, ContentPropertyFile file, string currentPath, Guid cuid, Guid puid)
+        {
+            // process the file
+            // no file, invalid file, reject change
+            if (UploadFileTypeValidator.ValidateFileExtension(file.FileName) == false)
+                return null;
+
+            // get the filepath
+            // in case we are using the old path scheme, try to re-use numbers (bah...)
+            var filepath = _mediaFileSystem.GetMediaPath(file.FileName, currentPath, cuid, puid); // fs-relative path
+
+            using (var filestream = File.OpenRead(file.TempFilePath))
+            {
+                // TODO: Here it would make sense to do the auto-fill properties stuff but the API doesn't allow us to do that right
+                // since we'd need to be able to return values for other properties from these methods
+
+                _mediaFileSystem.AddFile(filepath, filestream, true); // must overwrite!
+            }
+
+            return filepath;
+        }
     }
 }

@@ -17,8 +17,9 @@ namespace Umbraco.Core.Strings
         /// Converts an Utf8 string into an Ascii string.
         /// </summary>
         /// <param name="text">The text to convert.</param>
+        /// <param name="fail">The character to use to replace characters that cannot properly be converted.</param>
         /// <returns>The converted text.</returns>
-        public static string ToAsciiString(string text)
+        public static string ToAsciiString(string text, char fail = '?')
         {
             var input = text.ToCharArray();
 
@@ -26,7 +27,7 @@ namespace Umbraco.Core.Strings
             // but... we should be filtering short strings only...
 
             var output = new char[input.Length * 3]; // *3 because of things such as OE
-            var len = ToAscii(input, output);
+            var len = ToAscii(input, output, fail);
             return new string(output, 0, len);
 
             //var output = new StringBuilder(input.Length + 16); // default is 16, start with at least input length + little extra
@@ -38,8 +39,9 @@ namespace Umbraco.Core.Strings
         /// Converts an Utf8 string into an array of Ascii characters.
         /// </summary>
         /// <param name="text">The text to convert.</param>
+        /// <param name="fail">The character to use to replace characters that cannot properly be converted.</param>
         /// <returns>The converted text.</returns>
-        public static char[] ToAsciiCharArray(string text)
+        public static char[] ToAsciiCharArray(string text, char fail = '?')
         {
             var input = text.ToCharArray();
 
@@ -47,7 +49,7 @@ namespace Umbraco.Core.Strings
             // but... we should be filtering short strings only...
 
             var output = new char[input.Length * 3]; // *3 because of things such as OE
-            var len = ToAscii(input, output);
+            var len = ToAscii(input, output, fail);
             var array = new char[len];
             Array.Copy(output, array, len);
             return array;
@@ -64,10 +66,11 @@ namespace Umbraco.Core.Strings
         /// </summary>
         /// <param name="input">The input array.</param>
         /// <param name="output">The output array.</param>
+        /// <param name="fail">The character to use to replace characters that cannot properly be converted.</param>
         /// <returns>The number of characters in the output array.</returns>
         /// <remarks>The caller must ensure that the output array is big enough.</remarks>
         /// <exception cref="OverflowException">The output array is not big enough.</exception>
-        private static int ToAscii(char[] input, char[] output)
+        private static int ToAscii(char[] input, char[] output, char fail = '?')
         {
             var opos = 0;
 
@@ -75,10 +78,10 @@ namespace Umbraco.Core.Strings
                 if (char.IsSurrogate(input[ipos])) // ignore high surrogate
                 {
                     ipos++; // and skip low surrogate
-                    output[opos++] = '?';
+                    output[opos++] = fail;
                 }
                 else
-                    ToAscii(input, ipos, output, ref opos);
+                    ToAscii(input, ipos, output, ref opos, fail);
 
             return opos;
         }
@@ -109,12 +112,13 @@ namespace Umbraco.Core.Strings
         /// <param name="ipos">The input position.</param>
         /// <param name="output">The output array.</param>
         /// <param name="opos">The output position.</param>
+        /// <param name="fail">The character to use to replace characters that cannot properly be converted.</param>
         /// <remarks>
         /// <para>Adapted from various sources on the 'net including <c>Lucene.Net.Analysis.ASCIIFoldingFilter</c>.</para>
         /// <para>Input should contain Utf8 characters exclusively and NOT Unicode.</para>
         /// <para>Removes controls, normalizes whitespaces, replaces symbols by '?'.</para>
         /// </remarks>
-        private static void ToAscii(char[] input, int ipos, char[] output, ref int opos)
+        private static void ToAscii(char[] input, int ipos, char[] output, ref int opos, char fail = '?')
         {
             var c = input[ipos];
 
@@ -124,7 +128,7 @@ namespace Umbraco.Core.Strings
                 // The Unicode standard assigns the following code points to control characters: from \U0000 to \U001F,
                 // \U007F, and from \U0080 to \U009F. According to the Unicode standard, these values are to be
                 // interpreted as control characters unless their use is otherwise defined by an application. Valid
-                // control characters are members of the UnicodeCategory.Control category. 
+                // control characters are members of the UnicodeCategory.Control category.
 
                 // we don't want them
             }
@@ -133,10 +137,10 @@ namespace Umbraco.Core.Strings
             //    // The Unicode standard recognizes three subcategories of separators:
             //    // - Space separators (the UnicodeCategory.SpaceSeparator category), which includes characters such as \u0020.
             //    // - Line separators (the UnicodeCategory.LineSeparator category), which includes \u2028.
-            //    // - Paragraph separators (the UnicodeCategory.ParagraphSeparator category), which includes \u2029. 
+            //    // - Paragraph separators (the UnicodeCategory.ParagraphSeparator category), which includes \u2029.
             //    //
             //    // Note: The Unicode standard classifies the characters \u000A (LF), \u000C (FF), and \u000A (CR) as control
-            //    // characters (members of the UnicodeCategory.Control category), not as separator characters. 
+            //    // characters (members of the UnicodeCategory.Control category), not as separator characters.
 
             //    // better do it via WhiteSpace
             //}
@@ -3318,7 +3322,7 @@ namespace Umbraco.Core.Strings
 
                     // BEGIN CUSTOM TRANSLITERATION OF CYRILIC CHARS
 
-                    #region Cyrilic chars
+                    #region Cyrillic chars
 
                     // russian uppercase "А Б В Г Д Е Ё Ж З И Й К Л М Н О П Р С Т У Ф Х Ц Ч Ш Щ Ъ Ы Ь Э Ю Я"
                     // russian lowercase "а б в г д е ё ж з и й к л м н о п р с т у ф х ц ч ш щ ъ ы ь э ю я"
@@ -3333,10 +3337,9 @@ namespace Umbraco.Core.Strings
                     // time for a T4 template?
                     // also we should support extensibility so ppl can register more cases in external code
 
-                    // fixme
-                    // transliterates Анастасия as Anastasiya, and not Anastasia
+                    // TODO: transliterates Анастасия as Anastasiya, and not Anastasia
                     // Ольга --> Ol'ga, Татьяна --> Tat'yana -- that's bad (?)
-                    // Note: should ä (german umlaut) become a or ae ?
+                    // Note: should ä (German umlaut) become a or ae ?
 
                     case '\u0410': // А
                         output[opos++] = 'A';
@@ -3448,7 +3451,7 @@ namespace Umbraco.Core.Strings
                     case '\u0440': // р
                         output[opos++] = 'r';
                         break;
-                    case '\u0421': // С 
+                    case '\u0421': // С
                         output[opos++] = 'S';
                         break;
                     case '\u0441': // с
@@ -3583,7 +3586,7 @@ namespace Umbraco.Core.Strings
                         //    output[opos++] = c;
 
                         // strict ASCII
-                        output[opos++] = '?';
+                        output[opos++] = fail;
 
                         break;
                 }

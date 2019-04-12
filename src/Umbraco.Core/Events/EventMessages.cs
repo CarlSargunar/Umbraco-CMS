@@ -1,11 +1,11 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace Umbraco.Core.Events
 {
     /// <summary>
     /// Event messages collection
     /// </summary>
-    public sealed class EventMessages : DisposableObject
+    public sealed class EventMessages : DisposableObjectSlim
     {
         private readonly List<EventMessage> _msgs = new List<EventMessage>();
 
@@ -14,10 +14,7 @@ namespace Umbraco.Core.Events
             _msgs.Add(msg);
         }
 
-        public int Count
-        {
-            get { return _msgs.Count; }
-        }
+        public int Count => _msgs.Count;
 
         public IEnumerable<EventMessage> GetAll()
         {

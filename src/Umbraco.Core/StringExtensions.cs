@@ -8,14 +8,13 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Web;
-using System.Xml;
+using System.Web.Security;
 using Newtonsoft.Json;
 using Umbraco.Core.Configuration;
-using System.Web.Security;
-using Umbraco.Core.Strings;
-using Umbraco.Core.CodeAnnotations;
+using Umbraco.Core.Composing;
+using Umbraco.Core.Exceptions;
 using Umbraco.Core.IO;
+using Umbraco.Core.Strings;
 
 namespace Umbraco.Core
 {
@@ -25,10 +24,6 @@ namespace Umbraco.Core
     ///</summary>
     public static class StringExtensions
     {
-        [UmbracoWillObsolete("Do not use this constants. See IShortStringHelper.CleanStringForSafeAliasJavaScriptCode.")]
-        public const string UmbracoValidAliasCharacters = "_-abcdefghijklmnopqrstuvwxyz1234567890";
-        [UmbracoWillObsolete("Do not use this constants. See IShortStringHelper.CleanStringForSafeAliasJavaScriptCode.")]
-        public const string UmbracoInvalidFirstCharacters = "01234567890";
 
         private static readonly char[] ToCSharpHexDigitLower = "0123456789abcdef".ToCharArray();
         private static readonly char[] ToCSharpEscapeChars;
@@ -39,6 +34,22 @@ namespace Umbraco.Core
             ToCSharpEscapeChars = new char[escapes.Max(e => e[0]) + 1];
             foreach (var escape in escapes)
                 ToCSharpEscapeChars[escape[0]] = escape[1];
+        }
+
+        /// <summary>
+        /// Convert a path to node ids in the order from right to left (deepest to shallowest)
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
+        internal static int[] GetIdsFromPathReversed(this string path)
+        {
+            var nodeIds = path.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.TryConvertTo<int>())
+                .Where(x => x.Success)
+                .Select(x => x.Result)
+                .Reverse()
+                .ToArray();
+            return nodeIds;
         }
 
         /// <summary>
@@ -71,7 +82,7 @@ namespace Umbraco.Core
         }
 
         /// <summary>
-        /// Based on the input string, this will detect if the strnig is a JS path or a JS snippet.
+        /// Based on the input string, this will detect if the string is a JS path or a JS snippet.
         /// If a path cannot be determined, then it is assumed to be a snippet the original text is returned
         /// with an invalid attempt, otherwise a valid attempt is returned with the resolved path
         /// </summary>
@@ -105,8 +116,8 @@ namespace Umbraco.Core
                     //if the resolution was success, return it, otherwise just return the path, we've detected
                     // it's a path but maybe it's relative and resolution has failed, etc... in which case we're just
                     // returning what was given to us.
-                    return resolvedUrlResult.Success 
-                        ? resolvedUrlResult 
+                    return resolvedUrlResult.Success
+                        ? resolvedUrlResult
                         : Attempt.Succeed(input);
                 }
             }
@@ -115,23 +126,24 @@ namespace Umbraco.Core
         }
 
         /// <summary>
-        /// This tries to detect a json string, this is not a fail safe way but it is quicker than doing 
+        /// This tries to detect a json string, this is not a fail safe way but it is quicker than doing
         /// a try/catch when deserializing when it is not json.
         /// </summary>
         /// <param name="input"></param>
         /// <returns></returns>
-        internal static bool DetectIsJson(this string input)
+        public static bool DetectIsJson(this string input)
         {
+            if (input.IsNullOrWhiteSpace()) return false;
             input = input.Trim();
             return (input.StartsWith("{") && input.EndsWith("}"))
                    || (input.StartsWith("[") && input.EndsWith("]"));
         }
 
-        internal static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
-        internal static readonly string[] JsonEmpties = new [] { "[]", "{}" };
+        internal static readonly Lazy<Regex> Whitespace = new Lazy<Regex>(() => new Regex(@"\s+", RegexOptions.Compiled));
+        internal static readonly string[] JsonEmpties = { "[]", "{}" };
         internal static bool DetectIsEmptyJson(this string input)
         {
-            return JsonEmpties.Contains(Whitespace.Replace(input, string.Empty));
+            return JsonEmpties.Contains(Whitespace.Value.Replace(input, string.Empty));
         }
 
         /// <summary>
@@ -150,7 +162,7 @@ namespace Umbraco.Core
                 var obj = JsonConvert.DeserializeObject(input);
                 return obj;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return input;
             }
@@ -175,7 +187,6 @@ namespace Umbraco.Core
                 outputArray[i] = char.IsLetterOrDigit(inputArray[i]) ? inputArray[i] : replacement;
             return new string(outputArray);
         }
-
         private static readonly char[] CleanForXssChars = "*?(){}[];:%<>/\\|&'\"".ToCharArray();
 
         /// <summary>
@@ -184,9 +195,9 @@ namespace Umbraco.Core
         /// <param name="input"></param>
         /// <param name="ignoreFromClean"></param>
         /// <returns></returns>
-        internal static string CleanForXss(this string input, params char[] ignoreFromClean)
+        public static string CleanForXss(this string input, params char[] ignoreFromClean)
         {
-            //remove any html
+            //remove any HTML
             input = input.StripHtml();
             //strip out any potential chars involved with XSS
             return input.ExceptChars(new HashSet<char>(CleanForXssChars.Except(ignoreFromClean)));
@@ -225,7 +236,7 @@ namespace Umbraco.Core
         /// <returns></returns>
         /// <remarks>
         /// This methods ensures that the resulting URL is structured correctly, that there's only one '?' and that things are
-        /// delimited properly with '&' 
+        /// delimited properly with '&'
         /// </remarks>
         internal static string AppendQueryStringToUrl(this string url, params string[] queryStrings)
         {
@@ -303,7 +314,7 @@ namespace Umbraco.Core
             return decryptedValue.ToString();
         }
 
-        //this is from SqlMetal and just makes it a bit of fun to allow pluralisation
+        //this is from SqlMetal and just makes it a bit of fun to allow pluralization
         public static string MakePluralName(this string name)
         {
             if ((name.EndsWith("x", StringComparison.OrdinalIgnoreCase) || name.EndsWith("ch", StringComparison.OrdinalIgnoreCase)) || (name.EndsWith("s", StringComparison.OrdinalIgnoreCase) || name.EndsWith("sh", StringComparison.OrdinalIgnoreCase)))
@@ -456,13 +467,13 @@ namespace Umbraco.Core
             return ch.ToString(CultureInfo.InvariantCulture) == ch.ToString(CultureInfo.InvariantCulture).ToUpperInvariant();
         }
 
-        /// <summary>Is null or white space.</summary>
-        /// <param name="str">The str.</param>
-        /// <returns>The is null or white space.</returns>
-        public static bool IsNullOrWhiteSpace(this string str)
-        {
-            return (str == null) || (str.Trim().Length == 0);
-        }
+        /// <summary>Indicates whether a specified string is null, empty, or
+        /// consists only of white-space characters.</summary>
+        /// <param name="value">The value to check.</param>
+        /// <returns>Returns <see langword="true"/> if the value is null,
+        /// empty, or consists only of white-space characters, otherwise
+        /// returns <see langword="false"/>.</returns>
+        public static bool IsNullOrWhiteSpace(this string value) => string.IsNullOrWhiteSpace(value);
 
         public static string IfNullOrWhiteSpace(this string str, string defaultValue)
         {
@@ -521,14 +532,14 @@ namespace Umbraco.Core
         }
 
         /// <summary>
-        /// Strips all html from a string.
+        /// Strips all HTML from a string.
         /// </summary>
         /// <param name="text">The text.</param>
-        /// <returns>Returns the string without any html tags.</returns>
+        /// <returns>Returns the string without any HTML tags.</returns>
         public static string StripHtml(this string text)
         {
             const string pattern = @"<(.|\n)*?>";
-            return Regex.Replace(text, pattern, String.Empty);
+            return Regex.Replace(text, pattern, string.Empty, RegexOptions.Compiled);
         }
 
         /// <summary>
@@ -582,13 +593,14 @@ namespace Umbraco.Core
         ///<returns></returns>
         public static string ToUrlBase64(this string input)
         {
-            if (input == null) throw new ArgumentNullException("input");
+            if (input == null) throw new ArgumentNullException(nameof(input));
 
-            if (String.IsNullOrEmpty(input)) return String.Empty;
+            if (string.IsNullOrEmpty(input))
+                return string.Empty;
 
+            //return Convert.ToBase64String(bytes).Replace(".", "-").Replace("/", "_").Replace("=", ",");
             var bytes = Encoding.UTF8.GetBytes(input);
             return UrlTokenEncode(bytes);
-            //return Convert.ToBase64String(bytes).Replace(".", "-").Replace("/", "_").Replace("=", ",");
         }
 
         /// <summary>
@@ -598,17 +610,17 @@ namespace Umbraco.Core
         /// <returns></returns>
         public static string FromUrlBase64(this string input)
         {
-            if (input == null) throw new ArgumentNullException("input");
+            if (input == null) throw new ArgumentNullException(nameof(input));
 
             //if (input.IsInvalidBase64()) return null;
 
             try
             {
                 //var decodedBytes = Convert.FromBase64String(input.Replace("-", ".").Replace("_", "/").Replace(",", "="));
-                byte[] decodedBytes = UrlTokenDecode(input);
+                var decodedBytes = UrlTokenDecode(input);
                 return decodedBytes != null ? Encoding.UTF8.GetString(decodedBytes) : null;
             }
-            catch (FormatException ex)
+            catch (FormatException)
             {
                 return null;
             }
@@ -631,6 +643,11 @@ namespace Umbraco.Core
         /// <param name="str"></param>
         /// <returns></returns>
         public static string ToInvariantString(this int str)
+        {
+            return str.ToString(CultureInfo.InvariantCulture);
+        }
+
+        public static string ToInvariantString(this long str)
         {
             return str.ToString(CultureInfo.InvariantCulture);
         }
@@ -666,32 +683,16 @@ namespace Umbraco.Core
             return compare.Contains(compareTo, StringComparer.InvariantCultureIgnoreCase);
         }
 
-        /// <summary>
-        /// Determines if the string is a Guid
-        /// </summary>
-        /// <param name="str"></param>
-        /// <param name="withHyphens"></param>
-        /// <returns></returns>
-        public static bool IsGuid(this string str, bool withHyphens)
+        public static int InvariantIndexOf(this string s, string value)
         {
-            var isGuid = false;
-
-            if (!String.IsNullOrEmpty(str))
-            {
-                Regex guidRegEx;
-                if (withHyphens)
-                {
-                    guidRegEx = new Regex(@"^(\{{0,1}([0-9a-fA-F]){8}-([0-9a-fA-F]){4}-([0-9a-fA-F]){4}-([0-9a-fA-F]){4}-([0-9a-fA-F]){12}\}{0,1})$");
-                }
-                else
-                {
-                    guidRegEx = new Regex(@"^(\{{0,1}([0-9a-fA-F]){8}([0-9a-fA-F]){4}([0-9a-fA-F]){4}([0-9a-fA-F]){4}([0-9a-fA-F]){12}\}{0,1})$");
-                }
-                isGuid = guidRegEx.IsMatch(str);
-            }
-
-            return isGuid;
+            return s.IndexOf(value, StringComparison.OrdinalIgnoreCase);
         }
+
+        public static int InvariantLastIndexOf(this string s, string value)
+        {
+            return s.LastIndexOf(value, StringComparison.OrdinalIgnoreCase);
+        }
+
 
         /// <summary>
         /// Tries to parse a string into the supplied type by finding and using the Type's "Parse" method
@@ -712,7 +713,7 @@ namespace Umbraco.Core
         /// <returns></returns>
         public static object ParseInto(this string val, Type type)
         {
-            if (!String.IsNullOrEmpty(val))
+            if (string.IsNullOrEmpty(val) == false)
             {
                 TypeConverter tc = TypeDescriptor.GetConverter(type);
                 return tc.ConvertFrom(val);
@@ -721,35 +722,71 @@ namespace Umbraco.Core
         }
 
         /// <summary>
-        /// Converts the string to MD5
+        /// Generates a hash of a string based on the FIPS compliance setting.
         /// </summary>
-        /// <param name="stringToConvert">referrs to itself</param>
-        /// <returns>the md5 hashed string</returns>
-        public static string ToMd5(this string stringToConvert)
+        /// <param name="str">Refers to itself</param>
+        /// <returns>The hashed string</returns>
+        public static string GenerateHash(this string str)
         {
-            //create an instance of the MD5CryptoServiceProvider
-            var md5Provider = new MD5CryptoServiceProvider();
-
-            //convert our string into byte array
-            var byteArray = Encoding.UTF8.GetBytes(stringToConvert);
-
-            //get the hashed values created by our MD5CryptoServiceProvider
-            var hashedByteArray = md5Provider.ComputeHash(byteArray);
-
-            //create a StringBuilder object
-            var stringBuilder = new StringBuilder();
-
-            //loop to each each byte
-            foreach (var b in hashedByteArray)
-            {
-                //append it to our StringBuilder
-                stringBuilder.Append(b.ToString("x2").ToLower());
-            }
-
-            //return the hashed value
-            return stringBuilder.ToString();
+            return CryptoConfig.AllowOnlyFipsAlgorithms
+                ? str.ToSHA1()
+                : str.ToMd5();
         }
 
+        /// <summary>
+        /// Converts the string to MD5
+        /// </summary>
+        /// <param name="stringToConvert">Refers to itself</param>
+        /// <returns>The MD5 hashed string</returns>
+        [Obsolete("Please use the GenerateHash method instead. This may be removed in future versions")]
+        internal static string ToMd5(this string stringToConvert)
+        {
+            return stringToConvert.GenerateHash("MD5");
+        }
+
+        /// <summary>
+        /// Converts the string to SHA1
+        /// </summary>
+        /// <param name="stringToConvert">refers to itself</param>
+        /// <returns>The SHA1 hashed string</returns>
+        [Obsolete("Please use the GenerateHash method instead. This may be removed in future versions")]
+        internal static string ToSHA1(this string stringToConvert)
+        {
+            return stringToConvert.GenerateHash("SHA1");
+        }
+
+        /// <summary>Generate a hash of a string based on the hashType passed in
+        /// </summary>
+        /// <param name="str">Refers to itself</param>
+        /// <param name="hashType">String with the hash type.  See remarks section of the CryptoConfig Class in MSDN docs for a list of possible values.</param>
+        /// <returns>The hashed string</returns>
+        private static string GenerateHash(this string str, string hashType)
+        {
+            //create an instance of the correct hashing provider based on the type passed in
+            var hasher = HashAlgorithm.Create(hashType);
+            if (hasher == null) throw new InvalidOperationException("No hashing type found by name " + hashType);
+            using (hasher)
+            {
+                //convert our string into byte array
+                var byteArray = Encoding.UTF8.GetBytes(str);
+
+                //get the hashed values created by our selected provider
+                var hashedByteArray = hasher.ComputeHash(byteArray);
+
+                //create a StringBuilder object
+                var stringBuilder = new StringBuilder();
+
+                //loop to each byte
+                foreach (var b in hashedByteArray)
+                {
+                    //append it to our StringBuilder
+                    stringBuilder.Append(b.ToString("x2"));
+                }
+
+                //return the hashed value
+                return stringBuilder.ToString();
+            }
+        }
 
         /// <summary>
         /// Decodes a string that was encoded with UrlTokenEncode
@@ -759,42 +796,40 @@ namespace Umbraco.Core
         internal static byte[] UrlTokenDecode(string input)
         {
             if (input == null)
+                throw new ArgumentNullException(nameof(input));
+
+            if (input.Length == 0)
+                return Array.Empty<byte>();
+
+            // calc array size - must be groups of 4
+            var arrayLength = input.Length;
+            var remain = arrayLength % 4;
+            if (remain != 0) arrayLength += 4 - remain;
+
+            var inArray = new char[arrayLength];
+            for (var i = 0; i < input.Length; i++)
             {
-                throw new ArgumentNullException("input");
-            }
-            int length = input.Length;
-            if (length < 1)
-            {
-                return new byte[0];
-            }
-            int num2 = input[length - 1] - '0';
-            if ((num2 < 0) || (num2 > 10))
-            {
-                return null;
-            }
-            char[] inArray = new char[(length - 1) + num2];
-            for (int i = 0; i < (length - 1); i++)
-            {
-                char ch = input[i];
+                var ch = input[i];
                 switch (ch)
                 {
-                    case '-':
+                    case '-': // restore '-' as '+'
                         inArray[i] = '+';
                         break;
 
-                    case '_':
+                    case '_': // restore '_' as '/'
                         inArray[i] = '/';
                         break;
 
-                    default:
+                    default: // keep char unchanged
                         inArray[i] = ch;
                         break;
                 }
             }
-            for (int j = length - 1; j < inArray.Length; j++)
-            {
+
+            // pad with '='
+            for (var j = input.Length; j < inArray.Length; j++)
                 inArray[j] = '=';
-            }
+
             return Convert.FromBase64CharArray(inArray, 0, inArray.Length);
         }
 
@@ -806,59 +841,45 @@ namespace Umbraco.Core
         internal static string UrlTokenEncode(byte[] input)
         {
             if (input == null)
+                throw new ArgumentNullException(nameof(input));
+
+            if (input.Length == 0)
+                return string.Empty;
+
+            // base-64 digits are A-Z, a-z, 0-9, + and /
+            // the = char is used for trailing padding
+
+            var str = Convert.ToBase64String(input);
+
+            var pos = str.IndexOf('=');
+            if (pos < 0) pos = str.Length;
+
+            // replace chars that would cause problems in urls
+            var chArray = new char[pos];
+            for (var i = 0; i < pos; i++)
             {
-                throw new ArgumentNullException("input");
-            }
-            if (input.Length < 1)
-            {
-                return String.Empty;
-            }
-            string str = null;
-            int index = 0;
-            char[] chArray = null;
-            str = Convert.ToBase64String(input);
-            if (str == null)
-            {
-                return null;
-            }
-            index = str.Length;
-            while (index > 0)
-            {
-                if (str[index - 1] != '=')
-                {
-                    break;
-                }
-                index--;
-            }
-            chArray = new char[index + 1];
-            chArray[index] = (char)((0x30 + str.Length) - index);
-            for (int i = 0; i < index; i++)
-            {
-                char ch = str[i];
+                var ch = str[i];
                 switch (ch)
                 {
-                    case '+':
+                    case '+': // replace '+' with '-'
                         chArray[i] = '-';
                         break;
 
-                    case '/':
+                    case '/': // replace '/' with '_'
                         chArray[i] = '_';
                         break;
 
-                    case '=':
-                        chArray[i] = ch;
-                        break;
-
-                    default:
+                    default: // keep char unchanged
                         chArray[i] = ch;
                         break;
                 }
             }
+
             return new string(chArray);
         }
 
         /// <summary>
-        /// Ensures that the folder path endds with a DirectorySeperatorChar
+        /// Ensures that the folder path ends with a DirectorySeparatorChar
         /// </summary>
         /// <param name="currentFolder"></param>
         /// <returns></returns>
@@ -904,6 +925,18 @@ namespace Umbraco.Core
         public static string StripNewLines(this string input)
         {
             return input.Replace("\r", "").Replace("\n", "");
+        }
+
+        /// <summary>
+        /// Converts to single line by replacing line breaks with spaces.
+        /// </summary>
+        public static string ToSingleLine(this string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            text = text.Replace("\r\n", " "); // remove CRLF
+            text = text.Replace("\r", " "); // remove CR
+            text = text.Replace("\n", " "); // remove LF
+            return text;
         }
 
         public static string OrIfNullOrWhiteSpace(this string input, string alternative)
@@ -988,44 +1021,25 @@ namespace Umbraco.Core
         }
 
         /// <summary>
-        /// Gets the short string helper.
-        /// </summary>
-        /// <remarks>This is so that unit tests that do not initialize the resolver do not
-        /// fail and fall back to defaults. When running the whole Umbraco, CoreBootManager
-        /// does initialise the resolver.</remarks>
-        private static IShortStringHelper ShortStringHelper
-        {
-            get
-            {
-                if (ShortStringHelperResolver.HasCurrent)
-                    return ShortStringHelperResolver.Current.Helper;
-                if (_helper != null)
-                    return _helper;
-
-                // we don't want Umbraco to die because the resolver hasn't been initialized
-                // as the ShortStringHelper is too important, so as long as it's not there
-                // already, we use a default one. That should never happen, but...
-                Logging.LogHelper.Warn<IShortStringHelper>("ShortStringHelperResolver.HasCurrent == false, fallback to default.");
-                _helper = new DefaultShortStringHelper(UmbracoConfig.For.UmbracoSettings()).WithDefaultConfig();
-                _helper.Freeze();
-                return _helper;
-            }
-        }
-        private static IShortStringHelper _helper;
-
-        /// <summary>
-        /// Returns a new string in which all occurences of specified strings are replaced by other specified strings.
+        /// Returns a new string in which all occurrences of specified strings are replaced by other specified strings.
         /// </summary>
         /// <param name="text">The string to filter.</param>
         /// <param name="replacements">The replacements definition.</param>
         /// <returns>The filtered string.</returns>
         public static string ReplaceMany(this string text, IDictionary<string, string> replacements)
         {
-            return ShortStringHelper.ReplaceMany(text, replacements);
+            if (text == null) throw new ArgumentNullException(nameof(text));
+            if (replacements == null) throw new ArgumentNullException(nameof(replacements));
+
+
+            foreach (KeyValuePair<string, string> item in replacements)
+                text = text.Replace(item.Key, item.Value);
+
+            return text;
         }
 
         /// <summary>
-        /// Returns a new string in which all occurences of specified characters are replaced by a specified character.
+        /// Returns a new string in which all occurrences of specified characters are replaced by a specified character.
         /// </summary>
         /// <param name="text">The string to filter.</param>
         /// <param name="chars">The characters to replace.</param>
@@ -1033,65 +1047,17 @@ namespace Umbraco.Core
         /// <returns>The filtered string.</returns>
         public static string ReplaceMany(this string text, char[] chars, char replacement)
         {
-            return ShortStringHelper.ReplaceMany(text, chars, replacement);
+            if (text == null) throw new ArgumentNullException(nameof(text));
+            if (chars == null) throw new ArgumentNullException(nameof(chars));
+
+
+            for (int i = 0; i < chars.Length; i++)
+                text = text.Replace(chars[i], replacement);
+
+            return text;
         }
 
         // FORMAT STRINGS
-
-        // note: LegacyShortStringHelper will produce a 100% backward-compatible output for ToUrlAlias.
-        // this is the only reason why we keep the method, otherwise it should be removed, and with any other
-        // helper we fallback to ToUrlSegment anyway.
-
-        /// <summary>
-        /// Converts string to a URL alias.
-        /// </summary>
-        /// <param name="value">The value.</param>
-        /// <param name="charReplacements">The char replacements.</param>
-        /// <param name="replaceDoubleDashes">if set to <c>true</c> replace double dashes.</param>
-        /// <param name="stripNonAscii">if set to <c>true</c> strip non ASCII.</param>
-        /// <param name="urlEncode">if set to <c>true</c> URL encode.</param>
-        /// <returns></returns>
-        /// <remarks>
-        /// This ensures that ONLY ascii chars are allowed and of those ascii chars, only digits and lowercase chars, all
-        /// punctuation, etc... are stripped out, however this method allows you to pass in string's to replace with the
-        /// specified replacement character before the string is converted to ascii and it has invalid characters stripped out.
-        /// This allows you to replace strings like &amp; , etc.. with your replacement character before the automatic
-        /// reduction.
-        /// </remarks>
-        [Obsolete("This method should be removed. Use ToUrlSegment instead.")]
-        public static string ToUrlAlias(this string value, IDictionary<string, string> charReplacements, bool replaceDoubleDashes, bool stripNonAscii, bool urlEncode)
-        {
-            var helper = ShortStringHelper;
-            var legacy = helper as LegacyShortStringHelper;
-            return legacy != null
-                ? legacy.LegacyToUrlAlias(value, charReplacements, replaceDoubleDashes, stripNonAscii, urlEncode)
-                : helper.CleanStringForUrlSegment(value);
-        }
-
-        // note: LegacyShortStringHelper will produce a 100% backward-compatible output for FormatUrl.
-        // this is the only reason why we keep the method, otherwise it should be removed, and with any other
-        // helper we fallback to ToUrlSegment anyway.
-
-        /// <summary>
-        /// Cleans a string to produce a string that can safely be used in an url segment.
-        /// </summary>
-        /// <param name="url">The text to filter.</param>
-        /// <returns>The safe url segment.</returns>
-        /// <remarks>
-        /// <para>When using the legacy ShortStringHelper, uses <c>UmbracoSettings.UrlReplaceCharacters</c>
-        ///  and <c>UmbracoSettings.RemoveDoubleDashesFromUrlReplacing</c>.</para>
-        /// <para>Other helpers may use different parameters.</para>
-        /// </remarks>
-        [Obsolete("This method should be removed. Use ToUrlSegment instead.")]
-        public static string FormatUrl(this string url)
-        {
-            var helper = ShortStringHelper;
-            var legacy = helper as LegacyShortStringHelper;
-            return legacy != null ? legacy.LegacyFormatUrl(url) : helper.CleanStringForUrlSegment(url);
-        }
-
-        // note: LegacyShortStringHelper will produce a 100% backward-compatible output for ToSafeAlias
-        // other helpers may not. DefaultShortStringHelper produces better, but non-compatible, results.
 
         /// <summary>
         /// Cleans a string to produce a string that can safely be used in an alias.
@@ -1100,7 +1066,7 @@ namespace Umbraco.Core
         /// <returns>The safe alias.</returns>
         public static string ToSafeAlias(this string alias)
         {
-            return ShortStringHelper.CleanStringForSafeAlias(alias);
+            return Current.ShortStringHelper.CleanStringForSafeAlias(alias);
         }
 
         /// <summary>
@@ -1111,7 +1077,7 @@ namespace Umbraco.Core
         /// <returns>The safe alias.</returns>
         public static string ToSafeAlias(this string alias, bool camel)
         {
-            var a = ShortStringHelper.CleanStringForSafeAlias(alias);
+            var a = Current.ShortStringHelper.CleanStringForSafeAlias(alias);
             if (string.IsNullOrWhiteSpace(a) || camel == false) return a;
             return char.ToLowerInvariant(a[0]) + a.Substring(1);
         }
@@ -1122,52 +1088,9 @@ namespace Umbraco.Core
         /// <param name="alias">The text to filter.</param>
         /// <param name="culture">The culture.</param>
         /// <returns>The safe alias.</returns>
-        public static string ToSafeAlias(this string alias, CultureInfo culture)
+        public static string ToSafeAlias(this string alias, string culture)
         {
-            return ShortStringHelper.CleanStringForSafeAlias(alias, culture);
-        }
-
-        /// <summary>
-        /// Cleans (but only if required) a string to produce a string that can safely be used in an alias.
-        /// </summary>
-        /// <param name="alias">The text to filter.</param>
-        /// <returns>The safe alias.</returns>
-        /// <remarks>Checks <c>UmbracoSettings.ForceSafeAliases</c> to determine whether it should filter the text.</remarks>
-        public static string ToSafeAliasWithForcingCheck(this string alias)
-        {
-            return UmbracoConfig.For.UmbracoSettings().Content.ForceSafeAliases ? alias.ToSafeAlias() : alias;
-        }
-
-        /// <summary>
-        /// Cleans (but only if required) a string, in the context of a specified culture, to produce a string that can safely be used in an alias.
-        /// </summary>
-        /// <param name="alias">The text to filter.</param>
-        /// <param name="culture">The culture.</param>
-        /// <returns>The safe alias.</returns>
-        /// <remarks>Checks <c>UmbracoSettings.ForceSafeAliases</c> to determine whether it should filter the text.</remarks>
-        public static string ToSafeAliasWithForcingCheck(this string alias, CultureInfo culture)
-        {
-            return UmbracoConfig.For.UmbracoSettings().Content.ForceSafeAliases ? alias.ToSafeAlias(culture) : alias;
-        }
-
-        // note: LegacyShortStringHelper will produce a 100% backward-compatible output for ToUmbracoAlias.
-        // this is the only reason why we keep the method, otherwise it should be removed, and with any other
-        // helper we fallback to ToSafeAlias anyway.
-
-        /// <summary>
-        /// Cleans a string to produce a string that can safely be used in an alias.
-        /// </summary>
-        /// <param name="phrase">The text to filter.</param>
-        /// <param name="caseType">The case type. THIS PARAMETER IS IGNORED.</param>
-        /// <param name="removeSpaces">Indicates whether spaces should be removed. THIS PARAMETER IS IGNORED.</param>
-        /// <returns>The safe alias.</returns>
-        /// <remarks>CamelCase, and remove spaces, whatever the parameters.</remarks>
-        [Obsolete("This method should be removed. Use ToSafeAlias instead.")]
-        public static string ToUmbracoAlias(this string phrase, StringAliasCaseType caseType = StringAliasCaseType.CamelCase, bool removeSpaces = false)
-        {
-            var helper = ShortStringHelper;
-            var legacy = helper as LegacyShortStringHelper;
-            return legacy != null ? legacy.LegacyCleanStringForUmbracoAlias(phrase) : helper.CleanStringForSafeAlias(phrase);
+            return Current.ShortStringHelper.CleanStringForSafeAlias(alias, culture);
         }
 
         // the new methods to get a url segment
@@ -1179,7 +1102,9 @@ namespace Umbraco.Core
         /// <returns>The safe url segment.</returns>
         public static string ToUrlSegment(this string text)
         {
-            return ShortStringHelper.CleanStringForUrlSegment(text);
+            if (string.IsNullOrWhiteSpace(text)) throw new ArgumentNullOrEmptyException(nameof(text));
+
+            return Current.ShortStringHelper.CleanStringForUrlSegment(text);
         }
 
         /// <summary>
@@ -1188,34 +1113,11 @@ namespace Umbraco.Core
         /// <param name="text">The text to filter.</param>
         /// <param name="culture">The culture.</param>
         /// <returns>The safe url segment.</returns>
-        public static string ToUrlSegment(this string text, CultureInfo culture)
+        public static string ToUrlSegment(this string text, string culture)
         {
-            return ShortStringHelper.CleanStringForUrlSegment(text, culture);
-        }
+            if (string.IsNullOrWhiteSpace(text)) throw new ArgumentNullOrEmptyException(nameof(text));
 
-        // note: LegacyShortStringHelper will produce 100% backward-compatible output for ConvertCase.
-        // this is the only reason why we keep the method, otherwise it should be removed, and with any other
-        // helper we fallback to CleanString(ascii, alias) anyway.
-
-        /// <summary>
-        /// Filters a string to convert case, and more.
-        /// </summary>
-        /// <param name="phrase">the text to filter.</param>
-        /// <param name="cases">The string case type.</param>
-        /// <returns>The filtered text.</returns>
-        /// <remarks>
-        /// <para>This is the legacy method, so we can't really change it, although it has issues (see unit tests).</para>
-        /// <para>It does more than "converting the case", and also remove spaces, etc.</para>
-        /// </remarks>
-        [Obsolete("This method should be removed. Use ToCleanString instead.")]
-        public static string ConvertCase(this string phrase, StringAliasCaseType cases)
-        {
-            var helper = ShortStringHelper;
-            var legacy = helper as LegacyShortStringHelper;
-            var cases2 = cases.ToCleanStringType() & CleanStringType.CaseMask;
-            return legacy != null
-                       ? legacy.LegacyConvertStringCase(phrase, cases2)
-                       : helper.CleanString(phrase, CleanStringType.Ascii | CleanStringType.ConvertCase | cases2);
+            return Current.ShortStringHelper.CleanStringForUrlSegment(text, culture);
         }
 
         // the new methods to clean a string (to alias, url segment...)
@@ -1224,67 +1126,77 @@ namespace Umbraco.Core
         /// Cleans a string.
         /// </summary>
         /// <param name="text">The text to clean.</param>
-        /// <param name="stringType">A flag indicating the target casing and encoding of the string. By default, 
+        /// <param name="stringType">A flag indicating the target casing and encoding of the string. By default,
         /// strings are cleaned up to camelCase and Ascii.</param>
         /// <returns>The clean string.</returns>
-        /// <remarks>The string is cleaned in the context of the IShortStringHelper default culture.</remarks>
+        /// <remarks>The string is cleaned in the context of the ICurrent.ShortStringHelper default culture.</remarks>
         public static string ToCleanString(this string text, CleanStringType stringType)
         {
-            return ShortStringHelper.CleanString(text, stringType);
+            return Current.ShortStringHelper.CleanString(text, stringType);
         }
 
         /// <summary>
         /// Cleans a string, using a specified separator.
         /// </summary>
         /// <param name="text">The text to clean.</param>
-        /// <param name="stringType">A flag indicating the target casing and encoding of the string. By default, 
+        /// <param name="stringType">A flag indicating the target casing and encoding of the string. By default,
         /// strings are cleaned up to camelCase and Ascii.</param>
         /// <param name="separator">The separator.</param>
         /// <returns>The clean string.</returns>
-        /// <remarks>The string is cleaned in the context of the IShortStringHelper default culture.</remarks>
+        /// <remarks>The string is cleaned in the context of the ICurrent.ShortStringHelper default culture.</remarks>
         public static string ToCleanString(this string text, CleanStringType stringType, char separator)
         {
-            return ShortStringHelper.CleanString(text, stringType, separator);
+            return Current.ShortStringHelper.CleanString(text, stringType, separator);
         }
 
         /// <summary>
         /// Cleans a string in the context of a specified culture.
         /// </summary>
         /// <param name="text">The text to clean.</param>
-        /// <param name="stringType">A flag indicating the target casing and encoding of the string. By default, 
+        /// <param name="stringType">A flag indicating the target casing and encoding of the string. By default,
         /// strings are cleaned up to camelCase and Ascii.</param>
         /// <param name="culture">The culture.</param>
         /// <returns>The clean string.</returns>
-        public static string ToCleanString(this string text, CleanStringType stringType, CultureInfo culture)
+        public static string ToCleanString(this string text, CleanStringType stringType, string culture)
         {
-            return ShortStringHelper.CleanString(text, stringType, culture);
+            return Current.ShortStringHelper.CleanString(text, stringType, culture);
         }
 
         /// <summary>
         /// Cleans a string in the context of a specified culture, using a specified separator.
         /// </summary>
         /// <param name="text">The text to clean.</param>
-        /// <param name="stringType">A flag indicating the target casing and encoding of the string. By default, 
+        /// <param name="stringType">A flag indicating the target casing and encoding of the string. By default,
         /// strings are cleaned up to camelCase and Ascii.</param>
         /// <param name="separator">The separator.</param>
         /// <param name="culture">The culture.</param>
         /// <returns>The clean string.</returns>
-        public static string ToCleanString(this string text, CleanStringType stringType, char separator, CultureInfo culture)
+        public static string ToCleanString(this string text, CleanStringType stringType, char separator, string culture)
         {
-            return ShortStringHelper.CleanString(text, stringType, separator, culture);
+            return Current.ShortStringHelper.CleanString(text, stringType, separator, culture);
         }
 
-        // note: LegacyShortStringHelper will produce 100% backward-compatible output for SplitPascalCasing.
-        // other helpers may not. DefaultShortStringHelper produces better, but non-compatible, results.
+        // note: LegacyCurrent.ShortStringHelper will produce 100% backward-compatible output for SplitPascalCasing.
+        // other helpers may not. DefaultCurrent.ShortStringHelper produces better, but non-compatible, results.
 
         /// <summary>
         /// Splits a Pascal cased string into a phrase separated by spaces.
         /// </summary>
         /// <param name="phrase">The text to split.</param>
-        /// <returns>The splitted text.</returns>
+        /// <returns>The split text.</returns>
         public static string SplitPascalCasing(this string phrase)
         {
-            return ShortStringHelper.SplitPascalCasing(phrase, ' ');
+            return Current.ShortStringHelper.SplitPascalCasing(phrase, ' ');
+        }
+
+        //NOTE: Not sure what this actually does but is used a few places, need to figure it out and then move to StringExtensions and obsolete.
+        // it basically is yet another version of SplitPascalCasing
+        // plugging string extensions here to be 99% compatible
+        // the only diff. is with numbers, Number6Is was "Number6 Is", and the new string helper does it too,
+        // but the legacy one does "Number6Is"... assuming it is not a big deal.
+        internal static string SpaceCamelCasing(this string phrase)
+        {
+            return phrase.Length < 2 ? phrase : phrase.SplitPascalCasing().ToFirstUpperInvariant();
         }
 
         /// <summary>
@@ -1295,7 +1207,7 @@ namespace Umbraco.Core
         /// <returns>The safe filename.</returns>
         public static string ToSafeFileName(this string text)
         {
-            return ShortStringHelper.CleanStringForSafeFileName(text);
+            return Current.ShortStringHelper.CleanStringForSafeFileName(text);
         }
 
         /// <summary>
@@ -1305,13 +1217,13 @@ namespace Umbraco.Core
         /// <param name="text">The text to filter.</param>
         /// <param name="culture">The culture.</param>
         /// <returns>The safe filename.</returns>
-        public static string ToSafeFileName(this string text, CultureInfo culture)
+        public static string ToSafeFileName(this string text, string culture)
         {
-            return ShortStringHelper.CleanStringForSafeFileName(text, culture);
+            return Current.ShortStringHelper.CleanStringForSafeFileName(text, culture);
         }
 
         /// <summary>
-        /// An extension method that returns a new string in which all occurrences of a 
+        /// An extension method that returns a new string in which all occurrences of a
         /// specified string in the current instance are replaced with another specified string.
         /// StringComparison specifies the type of search to use for the specified string.
         /// </summary>
@@ -1322,9 +1234,9 @@ namespace Umbraco.Core
         /// <returns>Updated string</returns>
         public static string Replace(this string source, string oldString, string newString, StringComparison stringComparison)
         {
-            // This initialisation ensures the first check starts at index zero of the source. On successive checks for
+            // This initialization ensures the first check starts at index zero of the source. On successive checks for
             // a match, the source is skipped to immediately after the last replaced occurrence for efficiency
-            // and to avoid infinite loops when oldString and newString compare equal. 
+            // and to avoid infinite loops when oldString and newString compare equal.
             int index = -1 * newString.Length;
 
             // Determine if there are any matches left in source, starting from just after the result of replacing the last match.
@@ -1333,7 +1245,7 @@ namespace Umbraco.Core
                 // Remove the old text.
                 source = source.Remove(index, oldString.Length);
 
-                // Add the replacemenet text.
+                // Add the replacement text.
                 source = source.Insert(index, newString);
             }
 
@@ -1404,14 +1316,25 @@ namespace Umbraco.Core
             return ReplaceMany(text, regexSpecialCharacters);
         }
 
+        /// <summary>
+        /// Checks whether a string "haystack" contains within it any of the strings in the "needles" collection and returns true if it does or false if it doesn't
+        /// </summary>
+        /// <param name="haystack">The string to check</param>
+        /// <param name="needles">The collection of strings to check are contained within the first string</param>
+        /// <param name="comparison">The type of comparison to perform - defaults to <see cref="StringComparison.CurrentCulture"/></param>
+        /// <returns>True if any of the needles are contained with haystack; otherwise returns false</returns>
+        /// Added fix to ensure the comparison is used - see http://issues.umbraco.org/issue/U4-11313
         public static bool ContainsAny(this string haystack, IEnumerable<string> needles, StringComparison comparison = StringComparison.CurrentCulture)
         {
-            if (haystack == null) throw new ArgumentNullException("haystack");
-            if (string.IsNullOrEmpty(haystack) == false || needles.Any())
+            if (haystack == null)
+                throw new ArgumentNullException("haystack");
+
+            if (string.IsNullOrEmpty(haystack) || needles == null || !needles.Any())
             {
-                return needles.Any(value => haystack.IndexOf(value) >= 0);
+                return false;
             }
-            return false;
+
+            return needles.Any(value => haystack.IndexOf(value, comparison) >= 0);
         }
 
         public static bool CsvContains(this string csv, string value)
@@ -1424,27 +1347,51 @@ namespace Umbraco.Core
             return idCheckList.Contains(value);
         }
 
+        /// <summary>
+        /// Converts a file name to a friendly name for a content item
+        /// </summary>
+        /// <param name="fileName"></param>
+        /// <returns></returns>
+        public static string ToFriendlyName(this string fileName)
+        {
+            // strip the file extension
+            fileName = fileName.StripFileExtension();
+
+            // underscores and dashes to spaces
+            fileName = fileName.ReplaceMany(new[] { '_', '-' }, ' ');
+
+            // any other conversions ?
+
+            // Pascalcase (to be done last)
+            fileName = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(fileName);
+
+            // Replace multiple consecutive spaces with a single space
+            fileName = string.Join(" ", fileName.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
+
+            return fileName;
+        }
+
         // From: http://stackoverflow.com/a/961504/5018
         // filters control characters but allows only properly-formed surrogate sequences
-        private static readonly Regex InvalidXmlChars =
+        private static readonly Lazy<Regex> InvalidXmlChars = new Lazy<Regex>(() =>
             new Regex(
                 @"(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFEFF\uFFFE\uFFFF]",
-                RegexOptions.Compiled);
+                RegexOptions.Compiled));
 
 
         /// <summary>
-        /// An extension method that returns a new string in which all occurrences of an 
-        /// unicode characters that are invalid in XML files are replaced with an empty string. 
+        /// An extension method that returns a new string in which all occurrences of an
+        /// unicode characters that are invalid in XML files are replaced with an empty string.
         /// </summary>
         /// <param name="text">Current instance of the string</param>
         /// <returns>Updated string</returns>
-        /// 
+        ///
         /// <summary>
         /// removes any unusual unicode characters that can't be encoded into XML
         /// </summary>
         internal static string ToValidXmlString(this string text)
         {
-            return string.IsNullOrEmpty(text) ? text : InvalidXmlChars.Replace(text, "");
+            return string.IsNullOrEmpty(text) ? text : InvalidXmlChars.Value.Replace(text, "");
         }
 
         /// <summary>
@@ -1454,10 +1401,90 @@ namespace Umbraco.Core
         /// <returns></returns>
         internal static Guid ToGuid(this string text)
         {
-            var md5 = MD5.Create();
-            byte[] myStringBytes = Encoding.ASCII.GetBytes(text);
-            byte[] hash = md5.ComputeHash(myStringBytes);
-            return new Guid(hash);
+            return CreateGuidFromHash(UrlNamespace,
+                                        text,
+                                        CryptoConfig.AllowOnlyFipsAlgorithms
+                                            ? 5     // SHA1
+                                            : 3);   // MD5
         }
+
+        /// <summary>
+        /// The namespace for URLs (from RFC 4122, Appendix C).
+        ///
+        /// See <a href="http://www.ietf.org/rfc/rfc4122.txt">RFC 4122</a>
+        /// </summary>
+        internal static readonly Guid UrlNamespace = new Guid("6ba7b811-9dad-11d1-80b4-00c04fd430c8");
+
+        /// <summary>
+        /// Creates a name-based UUID using the algorithm from RFC 4122 §4.3.
+        ///
+        /// See <a href="https://github.com/LogosBible/Logos.Utility/blob/master/src/Logos.Utility/GuidUtility.cs#L34">GuidUtility.cs</a> for original implementation.
+        /// </summary>
+        /// <param name="namespaceId">The ID of the namespace.</param>
+        /// <param name="name">The name (within that namespace).</param>
+        /// <param name="version">The version number of the UUID to create; this value must be either
+        /// 3 (for MD5 hashing) or 5 (for SHA-1 hashing).</param>
+        /// <returns>A UUID derived from the namespace and name.</returns>
+        /// <remarks>See <a href="http://code.logos.com/blog/2011/04/generating_a_deterministic_guid.html">Generating a deterministic GUID</a>.</remarks>
+        internal static Guid CreateGuidFromHash(Guid namespaceId, string name, int version)
+        {
+            if (name == null)
+                throw new ArgumentNullException("name");
+            if (version != 3 && version != 5)
+                throw new ArgumentOutOfRangeException("version", "version must be either 3 or 5.");
+
+            // convert the name to a sequence of octets (as defined by the standard or conventions of its namespace) (step 3)
+            // ASSUME: UTF-8 encoding is always appropriate
+            byte[] nameBytes = Encoding.UTF8.GetBytes(name);
+
+            // convert the namespace UUID to network order (step 3)
+            byte[] namespaceBytes = namespaceId.ToByteArray();
+            SwapByteOrder(namespaceBytes);
+
+            // comput the hash of the name space ID concatenated with the name (step 4)
+            byte[] hash;
+            using (HashAlgorithm algorithm = version == 3 ? (HashAlgorithm)MD5.Create() : SHA1.Create())
+            {
+                algorithm.TransformBlock(namespaceBytes, 0, namespaceBytes.Length, null, 0);
+                algorithm.TransformFinalBlock(nameBytes, 0, nameBytes.Length);
+                hash = algorithm.Hash;
+            }
+
+            // most bytes from the hash are copied straight to the bytes of the new GUID (steps 5-7, 9, 11-12)
+            byte[] newGuid = new byte[16];
+            Array.Copy(hash, 0, newGuid, 0, 16);
+
+            // set the four most significant bits (bits 12 through 15) of the time_hi_and_version field to the appropriate 4-bit version number from Section 4.1.3 (step 8)
+            newGuid[6] = (byte)((newGuid[6] & 0x0F) | (version << 4));
+
+            // set the two most significant bits (bits 6 and 7) of the clock_seq_hi_and_reserved to zero and one, respectively (step 10)
+            newGuid[8] = (byte)((newGuid[8] & 0x3F) | 0x80);
+
+            // convert the resulting UUID to local byte order (step 13)
+            SwapByteOrder(newGuid);
+            return new Guid(newGuid);
+        }
+
+        // Converts a GUID (expressed as a byte array) to/from network order (MSB-first).
+        internal static void SwapByteOrder(byte[] guid)
+        {
+            SwapBytes(guid, 0, 3);
+            SwapBytes(guid, 1, 2);
+            SwapBytes(guid, 4, 5);
+            SwapBytes(guid, 6, 7);
+        }
+
+        private static void SwapBytes(byte[] guid, int left, int right)
+        {
+            byte temp = guid[left];
+            guid[left] = guid[right];
+            guid[right] = temp;
+        }
+
+        /// <summary>
+        /// Turns an null-or-whitespace string into a null string.
+        /// </summary>
+        public static string NullOrWhiteSpaceAsNull(this string text)
+            => string.IsNullOrWhiteSpace(text) ? null : text;
     }
 }

@@ -1,10 +1,48 @@
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
+using Umbraco.Core.Models;
 using Umbraco.Core.Models.Membership;
 
 namespace Umbraco.Core.Services
 {
+    /// <summary>
+    /// Content service extension methods
+    /// </summary>
     public static class ContentServiceExtensions
     {
+        public static IEnumerable<IContent> GetByIds(this IContentService contentService, IEnumerable<Udi> ids)
+        {
+            var guids = new List<GuidUdi>();
+            foreach (var udi in ids)
+            {
+                var guidUdi = udi as GuidUdi;
+                if (guidUdi == null)
+                    throw new InvalidOperationException("The UDI provided isn't of type " + typeof(GuidUdi) + " which is required by content");
+                guids.Add(guidUdi);
+            }
+
+            return contentService.GetByIds(guids.Select(x => x.Guid));
+        }
+
+        /// <summary>
+        /// Method to create an IContent object based on the Udi of a parent
+        /// </summary>
+        /// <param name="contentService"></param>
+        /// <param name="name"></param>
+        /// <param name="parentId"></param>
+        /// <param name="contentTypeAlias"></param>
+        /// <param name="userId"></param>
+        /// <returns></returns>
+        public static IContent CreateContent(this IContentService contentService, string name, Udi parentId, string contentTypeAlias, int userId = Constants.Security.SuperUserId)
+        {
+            var guidUdi = parentId as GuidUdi;
+            if (guidUdi == null)
+                throw new InvalidOperationException("The UDI provided isn't of type " + typeof(GuidUdi) + " which is required by content");
+            var parent = contentService.GetById(guidUdi.Guid);
+            return contentService.Create(name, parent, contentTypeAlias, userId);
+        }
+
         /// <summary>
         /// Remove all permissions for this user for all nodes
         /// </summary>
@@ -12,7 +50,7 @@ namespace Umbraco.Core.Services
         /// <param name="contentId"></param>
         public static void RemoveContentPermissions(this IContentService contentService, int contentId)
         {
-            contentService.ReplaceContentPermissions(new EntityPermissionSet(contentId, Enumerable.Empty<EntityPermissionSet.UserPermission>()));
+            contentService.SetPermissions(new EntityPermissionSet(contentId, new EntityPermissionCollection()));
         }
 
         /// <summary>

@@ -28,9 +28,9 @@ namespace Umbraco.Web.HealthCheck.Checks.Permissions
     {
         private readonly ILocalizedTextService _textService;
 
-        public FolderAndFilePermissionsCheck(HealthCheckContext healthCheckContext) : base(healthCheckContext)
+        public FolderAndFilePermissionsCheck(ILocalizedTextService textService)
         {
-            _textService = healthCheckContext.ApplicationContext.Services.TextService;
+            _textService = textService;
         }
 
         /// <summary>
@@ -59,29 +59,44 @@ namespace Umbraco.Web.HealthCheck.Checks.Permissions
             // in ALL circumstances or just some
             var pathsToCheck = new Dictionary<string, PermissionCheckRequirement>
             {
-                { SystemDirectories.AppCode, PermissionCheckRequirement.Optional },
                 { SystemDirectories.Data, PermissionCheckRequirement.Required },
                 { SystemDirectories.Packages, PermissionCheckRequirement.Required},
                 { SystemDirectories.Preview, PermissionCheckRequirement.Required },
                 { SystemDirectories.AppPlugins, PermissionCheckRequirement.Required },
-                { SystemDirectories.Bin, PermissionCheckRequirement.Optional },
                 { SystemDirectories.Config, PermissionCheckRequirement.Optional },
                 { SystemDirectories.Css, PermissionCheckRequirement.Optional },
-                { SystemDirectories.Masterpages, PermissionCheckRequirement.Optional },
                 { SystemDirectories.Media, PermissionCheckRequirement.Optional },
                 { SystemDirectories.Scripts, PermissionCheckRequirement.Optional },
                 { SystemDirectories.Umbraco, PermissionCheckRequirement.Optional },
-                { SystemDirectories.UmbracoClient, PermissionCheckRequirement.Optional },
-                { SystemDirectories.UserControls, PermissionCheckRequirement.Optional },
-                { SystemDirectories.MvcViews, PermissionCheckRequirement.Optional },
-                { SystemDirectories.Xslt, PermissionCheckRequirement.Optional },
+                { SystemDirectories.MvcViews, PermissionCheckRequirement.Optional }
+            };
+
+            //These are special paths to check that will restart an app domain if a file is written to them,
+            //so these need to be tested differently
+            var pathsToCheckWithRestarts = new Dictionary<string, PermissionCheckRequirement>
+            {
+                { SystemDirectories.AppCode, PermissionCheckRequirement.Optional },
+                { SystemDirectories.Bin, PermissionCheckRequirement.Optional }
             };
 
             // Run checks for required and optional paths for modify permission
-            List<string> requiredFailedPaths;
-            List<string> optionalFailedPaths;
-            var requiredPathCheckResult = FilePermissionHelper.TestDirectories(GetPathsToCheck(pathsToCheck, PermissionCheckRequirement.Required), out requiredFailedPaths);
-            var optionalPathCheckResult = FilePermissionHelper.TestDirectories(GetPathsToCheck(pathsToCheck, PermissionCheckRequirement.Optional), out optionalFailedPaths);
+            var requiredPathCheckResult = FilePermissionHelper.EnsureDirectories(
+                GetPathsToCheck(pathsToCheck, PermissionCheckRequirement.Required), out var requiredFailedPaths);
+            var optionalPathCheckResult = FilePermissionHelper.EnsureDirectories(
+                GetPathsToCheck(pathsToCheck, PermissionCheckRequirement.Optional), out var optionalFailedPaths);
+
+            //now check the special folders
+            var requiredPathCheckResult2 = FilePermissionHelper.EnsureDirectories(
+                GetPathsToCheck(pathsToCheckWithRestarts, PermissionCheckRequirement.Required), out var requiredFailedPaths2, writeCausesRestart:true);
+            var optionalPathCheckResult2 = FilePermissionHelper.EnsureDirectories(
+                GetPathsToCheck(pathsToCheckWithRestarts, PermissionCheckRequirement.Optional), out var optionalFailedPaths2, writeCausesRestart: true);
+
+            requiredPathCheckResult = requiredPathCheckResult && requiredPathCheckResult2;
+            optionalPathCheckResult = optionalPathCheckResult && optionalPathCheckResult2;
+
+            //combine the paths
+            requiredFailedPaths = requiredFailedPaths.Concat(requiredFailedPaths2).ToList();
+            optionalFailedPaths = requiredFailedPaths.Concat(optionalFailedPaths2).ToList();
 
             return GetStatus(requiredPathCheckResult, requiredFailedPaths, optionalPathCheckResult, optionalFailedPaths, PermissionCheckFor.Folder);
         }
@@ -96,10 +111,10 @@ namespace Umbraco.Web.HealthCheck.Checks.Permissions
             };
 
             // Run checks for required and optional paths for modify permission
-            List<string> requiredFailedPaths;
-            List<string> optionalFailedPaths;
-            var requiredPathCheckResult = FilePermissionHelper.TestFiles(GetPathsToCheck(pathsToCheck, PermissionCheckRequirement.Required), out requiredFailedPaths);
-            var optionalPathCheckResult = FilePermissionHelper.TestFiles(GetPathsToCheck(pathsToCheck, PermissionCheckRequirement.Optional), out optionalFailedPaths);
+            IEnumerable<string> requiredFailedPaths;
+            IEnumerable<string> optionalFailedPaths;
+            var requiredPathCheckResult = FilePermissionHelper.EnsureFiles(GetPathsToCheck(pathsToCheck, PermissionCheckRequirement.Required), out requiredFailedPaths);
+            var optionalPathCheckResult = FilePermissionHelper.EnsureFiles(GetPathsToCheck(pathsToCheck, PermissionCheckRequirement.Optional), out optionalFailedPaths);
 
             return GetStatus(requiredPathCheckResult, requiredFailedPaths, optionalPathCheckResult, optionalFailedPaths, PermissionCheckFor.File);
         }
@@ -114,11 +129,11 @@ namespace Umbraco.Web.HealthCheck.Checks.Permissions
                 .ToArray();
         }
 
-        private HealthCheckStatus GetStatus(bool requiredPathCheckResult, List<string> requiredFailedPaths,
+        private HealthCheckStatus GetStatus(bool requiredPathCheckResult, IEnumerable<string> requiredFailedPaths,
             bool optionalPathCheckResult, IEnumerable<string> optionalFailedPaths,
             PermissionCheckFor checkingFor)
         {
-            // Return error if any required parths fail the check, or warning if any optional ones do
+            // Return error if any required paths fail the check, or warning if any optional ones do
             var resultType = StatusResultType.Success;
             var messageKey = string.Format("healthcheck/{0}PermissionsCheckMessage",
                 checkingFor == PermissionCheckFor.Folder ? "folder" : "file");

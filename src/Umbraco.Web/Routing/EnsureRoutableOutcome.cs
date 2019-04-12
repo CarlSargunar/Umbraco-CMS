@@ -1,9 +1,9 @@
-namespace Umbraco.Web.Routing
+﻿namespace Umbraco.Web.Routing
 {
     /// <summary>
     /// Represents the outcome of trying to route an incoming request.
     /// </summary>
-    internal enum EnsureRoutableOutcome
+    public enum EnsureRoutableOutcome
     {
         /// <summary>
         /// Request routes to a document.
@@ -32,13 +32,8 @@ namespace Umbraco.Web.Routing
         NotReady = 11,
 
         /// <summary>
-        /// Umbraco was not configured.
-        /// </summary>
-        NotConfigured = 12,
-
-        /// <summary>
         /// There was no content at all.
         /// </summary>
-        NoContent = 13
+        NoContent = 12
     }
 }

@@ -40,27 +40,72 @@ Use this directive to generate a list of breadcrumbs.
 
 @param {array} ancestors Array of ancestors
 @param {string} entityType The content entity type (member, media, content).
+@param {callback} Callback when an ancestor is clicked. It will override the default link behaviour.
 **/
 
-(function() {
-  'use strict';
+(function () {
+    'use strict';
 
-  function BreadcrumbsDirective() {
+    function BreadcrumbsDirective($location, navigationService) {
 
-    var directive = {
-      restrict: 'E',
-      replace: true,
-      templateUrl: 'views/components/editor/umb-breadcrumbs.html',
-      scope: {
-        ancestors: "=",
-        entityType: "@"
-      }
-    };
+        function link(scope, el, attr, ctrl) {
 
-    return directive;
+            scope.allowOnOpen = false;
 
-  }
+            scope.open = function(ancestor) {
+                if(scope.onOpen && scope.allowOnOpen) {
+                    scope.onOpen({'ancestor': ancestor});
+                }
+            };
 
-  angular.module('umbraco.directives').directive('umbBreadcrumbs', BreadcrumbsDirective);
+            scope.openPath = function (ancestor, event) {
+                // targeting a new tab/window?
+                if (event.ctrlKey || 
+                    event.shiftKey ||
+                    event.metaKey || // apple
+                    (event.button && event.button === 1) // middle click, >IE9 + everyone else
+                ) {
+                    // yes, let the link open itself
+                    return;
+                }
+                event.stopPropagation();
+                event.preventDefault();
+
+                var path = scope.pathTo(ancestor);
+                $location.path(path);
+                navigationService.clearSearch(["cculture"]);
+            }
+
+            scope.pathTo = function (ancestor) {
+                return "/" + scope.entityType + "/" + scope.entityType + "/edit/" + ancestor.id;
+            }
+
+            function onInit() {
+                if ("onOpen" in attr) {
+                    scope.allowOnOpen = true;
+                }
+            }
+            
+            onInit();
+
+        }
+
+        var directive = {
+            restrict: 'E',
+            replace: true,
+            templateUrl: 'views/components/editor/umb-breadcrumbs.html',
+            scope: {
+                ancestors: "=",
+                entityType: "@",
+                onOpen: "&"
+            },
+            link: link
+        };
+
+        return directive;
+
+    }
+
+    angular.module('umbraco.directives').directive('umbBreadcrumbs', BreadcrumbsDirective);
 
 })();

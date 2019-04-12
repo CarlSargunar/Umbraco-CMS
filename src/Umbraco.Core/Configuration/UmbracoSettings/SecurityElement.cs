@@ -2,91 +2,56 @@
 
 namespace Umbraco.Core.Configuration.UmbracoSettings
 {
-    internal class SecurityElement : ConfigurationElement, ISecuritySection
+    internal class SecurityElement : UmbracoConfigurationElement, ISecuritySection
     {
         [ConfigurationProperty("keepUserLoggedIn")]
-        internal InnerTextConfigurationElement<bool> KeepUserLoggedIn
-        {
-            get
-            {
-                return new OptionalInnerTextConfigurationElement<bool>(
-                    (InnerTextConfigurationElement<bool>)this["keepUserLoggedIn"],
-                    //set the default
-                    true);   
-            }
-        }
+        internal InnerTextConfigurationElement<bool> KeepUserLoggedIn => GetOptionalTextElement("keepUserLoggedIn", true);
 
         [ConfigurationProperty("hideDisabledUsersInBackoffice")]
-        internal InnerTextConfigurationElement<bool> HideDisabledUsersInBackoffice
-        {
-            get
-            {
-                return new OptionalInnerTextConfigurationElement<bool>(
-                    (InnerTextConfigurationElement<bool>)this["hideDisabledUsersInBackoffice"],
-                    //set the default
-                    false);                          
-            }
-        }
+        internal InnerTextConfigurationElement<bool> HideDisabledUsersInBackoffice => GetOptionalTextElement("hideDisabledUsersInBackoffice", false);
 
+        /// <summary>
+        /// Used to enable/disable the forgot password functionality on the back office login screen
+        /// </summary>
         [ConfigurationProperty("allowPasswordReset")]
-        internal InnerTextConfigurationElement<bool> AllowPasswordReset
-        {
-            get
-            {
-                return new OptionalInnerTextConfigurationElement<bool>(
-                    (InnerTextConfigurationElement<bool>)this["allowPasswordReset"],
-                    //set the default
-                    true);
-            }
-        }
+        internal InnerTextConfigurationElement<bool> AllowPasswordReset => GetOptionalTextElement("allowPasswordReset", true);
+
+        /// <summary>
+        /// A boolean indicating that by default the email address will be the username
+        /// </summary>
+        /// <remarks>
+        /// Even if this is true and the username is different from the email in the database, the username field will still be shown.
+        /// When this is false, the username and email fields will be shown in the user section.
+        /// </remarks>
+        [ConfigurationProperty("usernameIsEmail")]
+        internal InnerTextConfigurationElement<bool> UsernameIsEmail => GetOptionalTextElement("usernameIsEmail", true);
 
         [ConfigurationProperty("authCookieName")]
-        internal InnerTextConfigurationElement<string> AuthCookieName
-        {
-            get
-            {
-                return new OptionalInnerTextConfigurationElement<string>(
-                    (InnerTextConfigurationElement<string>)this["authCookieName"],
-                    //set the default
-                    Constants.Web.AuthCookieName);                
-            }
-        }
+        internal InnerTextConfigurationElement<string> AuthCookieName => GetOptionalTextElement("authCookieName", "UMB_UCONTEXT");
 
         [ConfigurationProperty("authCookieDomain")]
-        internal InnerTextConfigurationElement<string> AuthCookieDomain
-        {
-            get
-            {
-                return new OptionalInnerTextConfigurationElement<string>(
-                    (InnerTextConfigurationElement<string>)this["authCookieDomain"],
-                    //set the default
-                    null);                    
-            }
-        }
+        internal InnerTextConfigurationElement<string> AuthCookieDomain => GetOptionalTextElement<string>("authCookieDomain", null);
 
-        bool ISecuritySection.KeepUserLoggedIn
-        {
-            get { return KeepUserLoggedIn; }
-        }
+        bool ISecuritySection.KeepUserLoggedIn => KeepUserLoggedIn;
 
-        bool ISecuritySection.HideDisabledUsersInBackoffice
-        {
-            get { return HideDisabledUsersInBackoffice; }
-        }
+        bool ISecuritySection.HideDisabledUsersInBackoffice => HideDisabledUsersInBackoffice;
 
-        bool ISecuritySection.AllowPasswordReset
-        {
-            get { return AllowPasswordReset; }
-        }
+        /// <summary>
+        /// Used to enable/disable the forgot password functionality on the back office login screen
+        /// </summary>
+        bool ISecuritySection.AllowPasswordReset => AllowPasswordReset;
 
-        string ISecuritySection.AuthCookieName
-        {
-            get { return AuthCookieName; }
-        }
+        /// <summary>
+        /// A boolean indicating that by default the email address will be the username
+        /// </summary>
+        /// <remarks>
+        /// Even if this is true and the username is different from the email in the database, the username field will still be shown.
+        /// When this is false, the username and email fields will be shown in the user section.
+        /// </remarks>
+        bool ISecuritySection.UsernameIsEmail => UsernameIsEmail;
 
-        string ISecuritySection.AuthCookieDomain
-        {
-            get { return AuthCookieDomain; }
-        }
+        string ISecuritySection.AuthCookieName => AuthCookieName;
+
+        string ISecuritySection.AuthCookieDomain => AuthCookieDomain;
     }
 }

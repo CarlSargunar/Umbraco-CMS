@@ -2,110 +2,103 @@
 using System.Configuration;
 using System.Data.SqlServerCe;
 using System.IO;
+using System.Threading;
 using Moq;
+using NPoco;
 using NUnit.Framework;
 using Umbraco.Core;
 using Umbraco.Core.Logging;
+using Umbraco.Core.Migrations.Install;
 using Umbraco.Core.Persistence;
+using Umbraco.Core.Persistence.Mappers;
 using Umbraco.Core.Persistence.SqlSyntax;
-using Umbraco.Core.Profiling;
 using Umbraco.Core.Services;
 using Umbraco.Tests.TestHelpers;
+using Umbraco.Web.Security;
 
 namespace Umbraco.Tests.Persistence
 {
-
-    [TestFixture, RequiresSTA]
+    [TestFixture]
+    [Apartment(ApartmentState.STA)]
     public class DatabaseContextTests
     {
-	    private DatabaseContext _dbContext;
+        private IUmbracoDatabaseFactory _databaseFactory;
+        private ILogger _logger;
+        private SqlCeSyntaxProvider _sqlCeSyntaxProvider;
+        private ISqlSyntaxProvider[] _sqlSyntaxProviders;
 
-		[SetUp]
-		public void Setup()
-		{
-            _dbContext = new DatabaseContext(
-                new DefaultDatabaseFactory(Core.Configuration.GlobalSettings.UmbracoConnectionName, Mock.Of<ILogger>()),
-                Mock.Of<ILogger>(), new SqlCeSyntaxProvider(), "System.Data.SqlServerCe.4.0");
-
-			//unfortunately we have to set this up because the PetaPocoExtensions require singleton access
-			ApplicationContext.Current = new ApplicationContext(
-                CacheHelper.CreateDisabledCacheHelper(),
-                new ProfilingLogger(Mock.Of<ILogger>(), Mock.Of<IProfiler>()))
-				{
-					DatabaseContext = _dbContext,
-					IsReady = true
-				};			
-		}
-
-		[TearDown]
-		public void TearDown()
-		{
-			_dbContext = null;
-			ApplicationContext.Current = null;
-		}
-
-        [Test]
-        public void Can_Verify_Single_Database_Instance()
+        [SetUp]
+        public void Setup()
         {
-			var db1 = _dbContext.Database;
-			var db2 = _dbContext.Database;
+            // create the database factory and database context
+            _sqlCeSyntaxProvider = new SqlCeSyntaxProvider();
+            _sqlSyntaxProviders = new[] { (ISqlSyntaxProvider) _sqlCeSyntaxProvider };
+            _logger = Mock.Of<ILogger>();
+            _databaseFactory = new UmbracoDatabaseFactory(_logger, new Lazy<IMapperCollection>(() => Mock.Of<IMapperCollection>()));
+        }
 
-            Assert.AreSame(db1, db2);
+        [TearDown]
+        public void TearDown()
+        {
+            _databaseFactory = null;
         }
 
         [Test]
-        public void Can_Assert_DatabaseProvider()
+        public void GetDatabaseType()
         {
-			var provider = _dbContext.DatabaseProvider;
-
-            Assert.AreEqual(DatabaseProviders.SqlServerCE, provider);
+            using (var database = _databaseFactory.CreateDatabase())
+            {
+                var databaseType = database.DatabaseType;
+                Assert.AreEqual(DatabaseType.SQLCe, databaseType);
+            }
         }
 
         [Test]
-        public void Can_Assert_Created_Database()
+        public void CreateDatabase() // FIXME: move to DatabaseBuilderTest!
         {
-            string path = TestHelper.CurrentAssemblyDirectory;
+            var path = TestHelper.CurrentAssemblyDirectory;
             AppDomain.CurrentDomain.SetData("DataDirectory", path);
 
-            //Delete database file before continueing
-            //NOTE: we'll use a custom db file for this test since we're re-using the one created with BaseDatabaseFactoryTest
-            string filePath = string.Concat(path, "\\DatabaseContextTests.sdf");
+            // delete database file
+            // NOTE: using a custom db file for this test since we're re-using the one created with BaseDatabaseFactoryTest
+            var filePath = string.Concat(path, "\\DatabaseContextTests.sdf");
             if (File.Exists(filePath))
-            {
                 File.Delete(filePath);
+
+            // get the connectionstring settings from config
+            var settings = ConfigurationManager.ConnectionStrings[Constants.System.UmbracoConnectionName];
+
+            // by default the conn string is: Datasource=|DataDirectory|UmbracoNPocoTests.sdf;Flush Interval=1;
+            // replace the SDF file with our own and create the sql ce database
+            var connString = settings.ConnectionString.Replace("UmbracoNPocoTests", "DatabaseContextTests");
+            using (var engine = new SqlCeEngine(connString))
+            {
+                engine.CreateDatabase();
             }
 
-            //Get the connectionstring settings from config
-            var settings = ConfigurationManager.ConnectionStrings[Core.Configuration.GlobalSettings.UmbracoConnectionName];
+            // re-create the database factory and database context with proper connection string
+            _databaseFactory = new UmbracoDatabaseFactory(connString, Constants.DbProviderNames.SqlCe, _logger, new Lazy<IMapperCollection>(() => Mock.Of<IMapperCollection>()));
 
-            //by default the conn string is: Datasource=|DataDirectory|UmbracoPetaPocoTests.sdf;Flush Interval=1;
-            //we'll just replace the sdf file with our custom one:
-            //Create the Sql CE database
-            var engine = new SqlCeEngine(settings.ConnectionString.Replace("UmbracoPetaPocoTests", "DatabaseContextTests"));
-            engine.CreateDatabase();
+            // create application context
+            //var appCtx = new ApplicationContext(
+            //    _databaseFactory,
+            //    new ServiceContext(migrationEntryService: Mock.Of<IMigrationEntryService>()),
+            //    CacheHelper.CreateDisabledCacheHelper(),
+            //    new ProfilingLogger(Mock.Of<ILogger>(), Mock.Of<IProfiler>()));
 
-            var dbFactory = new DefaultDatabaseFactory(engine.LocalConnectionString, "System.Data.SqlServerCe.4.0", Mock.Of<ILogger>());
-            //re-map the dbcontext to the new conn string
-            _dbContext = new DatabaseContext(
-                dbFactory,
-                Mock.Of<ILogger>(),
-                new SqlCeSyntaxProvider(),
-                dbFactory.ProviderName);
+            // create the umbraco database
+            DatabaseSchemaCreator schemaHelper;
+            using (var database = _databaseFactory.CreateDatabase())
+            using (var transaction = database.GetTransaction())
+            {
+                schemaHelper = new DatabaseSchemaCreator(database, _logger);
+                schemaHelper.InitializeDatabaseSchema();
+                transaction.Complete();
+            }
 
-            var schemaHelper = new DatabaseSchemaHelper(_dbContext.Database, Mock.Of<ILogger>(), new SqlCeSyntaxProvider());
-
-            var appCtx = new ApplicationContext(
-                new DatabaseContext(Mock.Of<IDatabaseFactory>(), Mock.Of<ILogger>(), Mock.Of<ISqlSyntaxProvider>(), "test"),
-                new ServiceContext(migrationEntryService: Mock.Of<IMigrationEntryService>()), 
-                CacheHelper.CreateDisabledCacheHelper(),
-                new ProfilingLogger(Mock.Of<ILogger>(), Mock.Of<IProfiler>()));
-
-            //Create the umbraco database
-            schemaHelper.CreateDatabaseSchema(false, appCtx);
-
-            bool umbracoNodeTable = schemaHelper.TableExist("umbracoNode");
-            bool umbracoUserTable = schemaHelper.TableExist("umbracoUser");
-            bool cmsTagsTable = schemaHelper.TableExist("cmsTags");
+            var umbracoNodeTable = schemaHelper.TableExists("umbracoNode");
+            var umbracoUserTable = schemaHelper.TableExists("umbracoUser");
+            var cmsTagsTable = schemaHelper.TableExists("cmsTags");
 
             Assert.That(umbracoNodeTable, Is.True);
             Assert.That(umbracoUserTable, Is.True);
@@ -124,7 +117,7 @@ namespace Umbraco.Tests.Persistence
         [TestCase("tcp:MyServer.database.windows.net,1433", "MyDatabase", "MyUser@MyServer", "MyPassword")]
         public void Build_Azure_Connection_String_Regular(string server, string databaseName, string userName, string password)
         {
-            var connectionString = _dbContext.BuildAzureConnectionString(server, databaseName, userName, password);
+            var connectionString = DatabaseBuilder.GetAzureConnectionString(server, databaseName, userName, password);
             Assert.AreEqual(connectionString, "Server=tcp:MyServer.database.windows.net,1433;Database=MyDatabase;User ID=MyUser@MyServer;Password=MyPassword");
         }
 
@@ -134,7 +127,7 @@ namespace Umbraco.Tests.Persistence
         [TestCase("tcp:kzeej5z8ty.ssmsawacluster4.windowsazure.mscds.com", "MyDatabase", "MyUser@kzeej5z8ty", "MyPassword")]
         public void Build_Azure_Connection_String_CustomServer(string server, string databaseName, string userName, string password)
         {
-            var connectionString = _dbContext.BuildAzureConnectionString(server, databaseName, userName, password);
+            var connectionString = DatabaseBuilder.GetAzureConnectionString(server, databaseName, userName, password);
             Assert.AreEqual(connectionString, "Server=tcp:kzeej5z8ty.ssmsawacluster4.windowsazure.mscds.com,1433;Database=MyDatabase;User ID=MyUser@kzeej5z8ty;Password=MyPassword");
         }
     }

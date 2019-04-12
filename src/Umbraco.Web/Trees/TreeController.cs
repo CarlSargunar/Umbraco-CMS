@@ -1,14 +1,10 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Globalization;
-using System.Linq;
-using System.Net.Http.Formatting;
-using System.Threading;
-using System.Web.Security;
 using Umbraco.Core;
-using Umbraco.Core.Models;
-using Umbraco.Web.Models.Trees;
-using Umbraco.Web.Mvc;
+using Umbraco.Core.Cache;
+using Umbraco.Core.Configuration;
+using Umbraco.Core.Logging;
+using Umbraco.Core.Persistence;
 using Umbraco.Core.Services;
 
 namespace Umbraco.Web.Trees
@@ -18,69 +14,54 @@ namespace Umbraco.Web.Trees
     /// </summary>
     public abstract class TreeController : TreeControllerBase
     {
-        private TreeAttribute _attribute;
+        private static readonly ConcurrentDictionary<Type, TreeAttribute> TreeAttributeCache = new ConcurrentDictionary<Type, TreeAttribute>();
+
+        private readonly TreeAttribute _treeAttribute;
+
+        protected TreeController(IGlobalSettings globalSettings, IUmbracoContextAccessor umbracoContextAccessor, ISqlContext sqlContext, ServiceContext services, AppCaches appCaches, IProfilingLogger logger, IRuntimeState runtimeState, UmbracoHelper umbracoHelper)
+            : base(globalSettings, umbracoContextAccessor, sqlContext, services, appCaches, logger, runtimeState, umbracoHelper)
+        {
+            _treeAttribute = GetTreeAttribute();
+        }
 
         protected TreeController()
         {
-            Initialize();
+            _treeAttribute = GetTreeAttribute();
         }
 
-        protected TreeController(UmbracoContext umbracoContext) : base(umbracoContext)
-        {
-            Initialize();
-        }
+        /// <inheritdoc />
+        public override string RootNodeDisplayName => Tree.GetRootNodeDisplayName(this, Services.TextService);
 
-        protected TreeController(UmbracoContext umbracoContext, UmbracoHelper umbracoHelper) : base(umbracoContext, umbracoHelper)
-        {
-            Initialize();
-        }        
+        /// <inheritdoc />
+        public override string TreeGroup => _treeAttribute.TreeGroup;
 
-        /// <summary>
-        /// The name to display on the root node
-        /// </summary>
-        public override string RootNodeDisplayName
+        /// <inheritdoc />
+        public override string TreeAlias => _treeAttribute.TreeAlias;
+
+        /// <inheritdoc />
+        public override string TreeTitle => _treeAttribute.TreeTitle;
+
+        /// <inheritdoc />
+        public override TreeUse TreeUse => _treeAttribute.TreeUse;
+
+        /// <inheritdoc />
+        public override string SectionAlias => _treeAttribute.SectionAlias;
+
+        /// <inheritdoc />
+        public override int SortOrder => _treeAttribute.SortOrder;
+
+        /// <inheritdoc />
+        public override bool IsSingleNodeTree => _treeAttribute.IsSingleNodeTree;
+
+        private TreeAttribute GetTreeAttribute()
         {
-            get
+            return TreeAttributeCache.GetOrAdd(GetType(), type =>
             {
-
-                //if title is defined, return that
-                if(string.IsNullOrEmpty(_attribute.Title) == false)
-                    return _attribute.Title;
-
-
-                //try to look up a tree header matching the tree alias
-                var localizedLabel = Services.TextService.Localize("treeHeaders/" + _attribute.Alias);
-                if (string.IsNullOrEmpty(localizedLabel) == false)
-                    return localizedLabel;
-
-                //is returned to signal that a label was not found
-                return "[" + _attribute.Alias + "]";
-            }
-        }
-
-        /// <summary>
-        /// Gets the current tree alias from the attribute assigned to it.
-        /// </summary>
-        public override string TreeAlias
-        {
-            get { return _attribute.Alias; }
-        }
-
-        private void Initialize()
-        {
-            //Locate the tree attribute
-            var treeAttributes = GetType()
-                .GetCustomAttributes(typeof(TreeAttribute), false)
-                .OfType<TreeAttribute>()
-                .ToArray();
-
-            if (treeAttributes.Any() == false)
-            {
-                throw new InvalidOperationException("The Tree controller is missing the " + typeof(TreeAttribute).FullName + " attribute");
-            }
-
-            //assign the properties of this object to those of the metadata attribute
-            _attribute = treeAttributes.First();
+                var treeAttribute = type.GetCustomAttribute<TreeAttribute>(false);
+                if (treeAttribute == null)
+                    throw new InvalidOperationException("The Tree controller is missing the " + typeof(TreeAttribute).FullName + " attribute");
+                return treeAttribute;
+            });
         }
     }
 }

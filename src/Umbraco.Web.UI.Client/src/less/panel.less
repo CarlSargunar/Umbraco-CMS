@@ -1,7 +1,7 @@
 // Panel
 // -------------------------
 .umb-panel {
-    background: white;
+    background: @white;
     position: absolute;
     top: 0px;
     bottom: 0px;
@@ -15,8 +15,8 @@
 }
 
 .umb-panel-header {
-    background: @grayLighter;
-    border-bottom: 1px solid @grayLight;
+    background: @gray-10;
+    border-bottom: 1px solid @purple-l3;
     position: absolute;
     height: 99px;
     top: 0px;
@@ -43,15 +43,27 @@
 }
 
 .umb-mediapicker-upload {
-    display: -ms-flexbox;
-    display: -webkit-box;
-    display: -webkit-flex;
     display: flex;
 
     .form-search {
-        -webkit-flex: 1;
-        -ms-flex: 1;
         flex: 1;
+
+        &__toggle {
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+
+            label {
+                display: flex;
+                align-items: center;
+                margin-left: 5px;
+                margin-bottom: 0;
+
+                input[type="checkbox"] {
+                    margin: 0 5px 0 0;
+                }
+            }
+        }
     }
 
     .upload-button {
@@ -72,24 +84,12 @@
     line-height: 1.4;
     height: auto;
     width: 100%;
-    border: 1px solid @grayLighter;
+    border: 1px solid @gray-10;
 }
 
 .umb-panel-header .umb-headline:focus, .umb-panel-header .umb-headline:active {
-    border: 1px solid @grayLight;
+    border: 1px solid @gray-8;
     background-color: @white;
-}
-
-.umb-headline-editor-wrapper {
-    position: relative;
-}
-
-.umb-headline-editor-wrapper .help-inline {
-    right: 0px;
-    top: 25px;
-    position: absolute;
-    font-size: 10px;
-    color: @red;
 }
 
 .umb-panel-header p {
@@ -99,36 +99,6 @@
 .umb-btn-toolbar .dimmed, .umb-dimmed {
     opacity: 0.6;
 }
-
-.umb-headline-editor-wrapper input {
-    background: none;
-    border: none;
-    margin: -6px 0 0 0;
-    padding: 0 0 2px 0;
-    border-radius: 0;
-    line-height: normal;
-    border: 1px solid transparent;
-    color: @black;
-    letter-spacing: -0.01em;
-}
-
-.umb-headline-editor-wrapper input.ng-invalid {
-    color: @red;
-}
-
-.umb-headline-editor-wrapper input.ng-invalid::-moz-placeholder,
-.umb-headline-editor-wrapper input.ng-invalid:-ms-input-placeholder,
-.umb-headline-editor-wrapper input.ng-invalid::-webkit-input-placeholder {
-    color: @red;
-    line-height: 22px;
-}
-
-/*
-.umb-panel-header i {
-    font-size: 13px;
-    vertical-align: middle;
-}
-*/
 
 .umb-panel-header-meta {
     height: 50px;
@@ -161,7 +131,7 @@
 }
 
 .umb-btn-toolbar .dropdown-menu small {
-    background: #fef9db;
+    background: @turquoise-l3;
     display: block;
     padding: 10px 20px;
 }
@@ -173,11 +143,9 @@
 
 /* tab buttons */
 .umb-bottom-bar {
-    background: white;
-    -webkit-box-shadow: 0px -18px 20px rgba(255, 255, 255, 1);
-    -moz-box-shadow: 0px -18px 20px rgba(255, 255, 255, 1);
-    box-shadow: 0px -18px 20px rgba(255, 255, 255, 1);
-    border-top: 1px solid @grayLighter;
+    background: @white;
+    box-shadow: 0 -18px 20px rgba(255, 255, 255, 1);
+    border-top: 1px solid @gray-10;
     padding: 10px 0 10px 0;
     position: fixed;
     bottom: 0;
@@ -224,8 +192,8 @@
     height: 30px;
     left: 0px;
     right: 0px;
-    background: @grayLighter;
-    border-top: @grayLight 1px solid;
+    background: @gray-10;
+    border-top: @gray-8 1px solid;
     display: block;
     margin: 0;
     overflow: hidden;
@@ -236,21 +204,21 @@
     display: block;
     float: left;
     height: 30px;
-    background: @grayLighter;
+    background: @gray-10;
     text-align: center;
     padding: 8px 0px 8px 30px;
     position: relative;
     margin: 0 1px 0 0;
     text-decoration: none;
-    color: @gray;
-    font-size: 11px;
+    color: @gray-3;
+    font-size: 12px;
 }
 
 .umb-panel-footer-nav li a:after {
     content: "";
     border-top: 16px solid transparent;
     border-bottom: 16px solid transparent;
-    border-left: 16px solid @grayLighter;
+    border-left: 16px solid @gray-10;
     position: absolute;
     right: -16px;
     top: 0;
@@ -261,7 +229,7 @@
     content: "";
     border-top: 16px solid transparent;
     border-bottom: 16px solid transparent;
-    border-left: 16px solid @grayLight;
+    border-left: 16px solid @gray-8;
     position: absolute;
     left: 0;
     top: 0;
@@ -286,14 +254,14 @@
 // form styles
 .umb-dialog .muted,
 .umb-panel .muted {
-    color: @grayLight;
+    color: @gray-5;
 }
 
 .umb-dialog a.muted:hover,
 .umb-dialog a.muted:focus,
 .umb-panel a.muted:hover,
 .umb-panel a.muted:focus {
-    color: darken(@grayLight, 10%);
+    color: darken(@gray-5, 10%);
 }
 
 .umb-dialog .text-warning,
@@ -356,8 +324,6 @@
 .umb-panel-header-content-wrapper {
   display: flex;
   flex-direction: column;
-  height: 100px;
-  padding: 0 20px;
 }
 
 .umb-panel-header-content {
@@ -372,22 +338,24 @@
    flex-direction: row;
 }
 
-.umb-panel-header-left-side.-top-position {
-  position: relative;
-  top: -12px;
-}
-
 .umb-panel-header-icon {
   cursor: pointer;
   margin-right: 5px;
-  height: 55px;
+  height: 50px;
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #ffffff;
-  border: 1px solid #ECECEC;
+  background: @white;
+  border: 1px solid @ui-action-discreet-border;
   animation: fadeIn 0.5s;
-  flex: 0 0 55px;
+  border-radius: 3px;
+  width: 50px;
+  &:hover {
+      .icon {
+          opacity: 0.8;
+      }
+      border-color: @ui-action-discreet-border-hover;
+  }
 }
 
 .umb-panel-header-title-wrapper {
@@ -411,52 +379,29 @@
    margin-bottom: 0;
 }
 
-.umb-panel-header-alias .umb-validation-label:after {
-   visibility: hidden;
-}
-
 .umb-panel-header-alias .umb-locked-field:after {
    display: none;
 }
 
 .umb-panel-header-icon.-placeholder {
-  border: 1px dashed @grayLight;
+  border: 1px dashed @gray-8;
 }
 
 .umb-panel-header-icon .icon {
-  font-size: 35px;
-  color: @grayLight;
+    font-size: 30px;
+    color: @gray-7;
+    transition: opacity 120ms;
 }
 
 .umb-panel-header-icon-text {
-  color: @blue;
+  color: @green;
   font-weight: bold;
   font-size: 10px;
 }
 
-.umb-panel-header .umb-nav-tabs {
-  bottom: -1px;
-}
-
-input.umb-panel-header-name-input {
-  border-color: #ECECEC;
-  font-size: 15px;
-  color: #000000;
-  margin-bottom: 0;
-  font-weight: bold;
-  box-sizing: border-box;
-  height: 30px;
-  line-height: 30px;
-  width: 100%;
-  &:hover {
-    background: #ffffff;
-    border: 1px solid #cccccc;
-  }
-}
-
 input.umb-panel-header-name-input.name-is-empty {
-  border: 1px dashed @grayLight;
-  background: #ffffff;
+  border: 1px dashed @gray-8;
+  background: @white;
 }
 
 .umb-panel-header-name {
@@ -469,27 +414,20 @@ input.umb-panel-header-description {
   background: transparent;
   border-color: transparent;
   margin-bottom: 0;
-  font-size: 12px;
+  font-size: 13px;
   box-sizing: border-box;
-  height: 25px;
-  line-height: 25px;
+  height: 22px;
+  line-height: 22px;
   width: 100%;
   &:hover {
-    background: #ffffff;
-    border-color: #cccccc;
+    background: @white;
+    border-color: @gray-8;
   }
 }
 
-.umb-editor-drawer-content {
-  display: flex;
-  align-items: center;
-  //justify-content: space-between;
-}
-
-.umb-editor-drawer-content__right-side {
-	margin-left: auto;
-}
-
-.umb-editor-drawer-content__left-side {
-	margin-right: auto;
+.umb-panel-header-locked-description {
+    font-size: 12px;
+    margin-top: 2px;
+    height: 22px;
+    line-height: 22px;
 }

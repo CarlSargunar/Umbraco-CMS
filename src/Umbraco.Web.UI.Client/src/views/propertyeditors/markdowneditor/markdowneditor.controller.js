@@ -1,5 +1,5 @@
 //inject umbracos assetsServce and dialog service
-function MarkdownEditorController($scope, $element, assetsService, dialogService, angularHelper, $timeout) {
+function MarkdownEditorController($scope, $element, assetsService, editorService, angularHelper, $timeout) {
 
     //tell the assets service to load the markdown.editor libs from the markdown editors
     //plugin folder
@@ -8,27 +8,23 @@ function MarkdownEditorController($scope, $element, assetsService, dialogService
         $scope.model.value = $scope.model.config.defaultValue;
     }
 
+    // create a unique ID for the markdown editor, so the button bar bindings can handle split view
+    // - must be bound on scope, not scope.model - otherwise it won't work, because $scope.model is used in both sides of the split view
+    $scope.editorId = $scope.model.alias + _.uniqueId("-");
+
     function openMediaPicker(callback) {
-
-      $scope.mediaPickerOverlay = {};
-      $scope.mediaPickerOverlay.view = "mediaPicker";
-      $scope.mediaPickerOverlay.show = true;
-      $scope.mediaPickerOverlay.disableFolderSelect = true;
-
-      $scope.mediaPickerOverlay.submit = function(model) {
-
-          var selectedImagePath = model.selectedImages[0].image;
-          callback(selectedImagePath);
-
-          $scope.mediaPickerOverlay.show = false;
-          $scope.mediaPickerOverlay = null;
-      };
-
-      $scope.mediaPickerOverlay.close = function(model) {
-          $scope.mediaPickerOverlay.show = false;
-          $scope.mediaPickerOverlay = null;
-      };
-
+        var mediaPicker = {
+            disableFolderSelect: true,
+            submit: function(model) {
+                var selectedImagePath = model.selection[0].image;
+                callback(selectedImagePath);
+                editorService.close();
+            },
+            close: function() {
+                editorService.close();
+            }
+        };
+        editorService.mediaPicker(mediaPicker);
     }
 
     assetsService
@@ -46,8 +42,9 @@ function MarkdownEditorController($scope, $element, assetsService, dialogService
                 // init the md editor after this digest because the DOM needs to be ready first
                 // so run the init on a timeout
                 $timeout(function () {
+                    $scope.markdownEditorInitComplete = false;
                     var converter2 = new Markdown.Converter();
-                    var editor2 = new Markdown.Editor(converter2, "-" + $scope.model.alias);
+                    var editor2 = new Markdown.Editor(converter2, "-" + $scope.editorId);
                     editor2.run();
 
                     //subscribe to the image dialog clicks
@@ -57,16 +54,23 @@ function MarkdownEditorController($scope, $element, assetsService, dialogService
                     });
 
                     editor2.hooks.set("onPreviewRefresh", function () {
-                        angularHelper.getCurrentForm($scope).$setDirty();
-                        // We must manually update the model as there is no way to hook into the markdown editor events without editing that code.
-                        $scope.model.value = $("textarea", $element).val();
+                        // We must manually update the model as there is no way to hook into the markdown editor events without exstensive edits to the library.
+                        if ($scope.model.value !== $("textarea", $element).val()) {
+                            if ($scope.markdownEditorInitComplete) {
+                                //only set dirty after init load to avoid "unsaved" dialogue when we don't want it
+                                angularHelper.getCurrentForm($scope).$setDirty();
+                            } else {
+                                $scope.markdownEditorInitComplete = true;
+                            }
+                            $scope.model.value = $("textarea", $element).val();
+                        }
                     });
 
                 }, 200);
             });
 
-            //load the seperat css for the editor to avoid it blocking our js loading TEMP HACK
-            assetsService.loadCss("lib/markdown/markdown.css");
+            // HACK: load the separate css for the editor to avoid it blocking our js loading TEMP HACK
+            assetsService.loadCss("lib/markdown/markdown.css", $scope);
         })
 }
 

@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace Umbraco.Core.Persistence
 {
 
-    //TODO: Would be good to use this exception type anytime we cannot find an entity
+    // TODO: Would be good to use this exception type anytime we cannot find an entity
 
     /// <summary>
     /// An exception used to indicate that an umbraco entity could not be found
@@ -39,7 +39,7 @@ namespace Umbraco.Core.Persistence
 
             if (Id != null)
             {
-                return "Umbraco entity (id: " + Id + ") not found. " + result;    
+                return "Umbraco entity (id: " + Id + ") not found. " + result;
             }
 
             return result;

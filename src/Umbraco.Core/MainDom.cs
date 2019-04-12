@@ -1,18 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO.MemoryMappedFiles;
-using System.Text;
+using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Web.Hosting;
 using Umbraco.Core.Logging;
-using Umbraco.Core.ObjectResolution;
 
 namespace Umbraco.Core
 {
-    // represents the main domain
-    class MainDom : IRegisteredObject
+    /// <summary>
+    /// Provides the full implementation of <see cref="IMainDom"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>When an AppDomain starts, it tries to acquire the main domain status.</para>
+    /// <para>When an AppDomain stops (eg the application is restarting) it should release the main domain status.</para>
+    /// </remarks>
+    internal class MainDom : IMainDom, IRegisteredObject
     {
         #region Vars
 
@@ -25,7 +27,7 @@ namespace Umbraco.Core
         private readonly AsyncLock _asyncLock;
         private IDisposable _asyncLocker;
 
-        // event wait handle used to notify current main domain that it should 
+        // event wait handle used to notify current main domain that it should
         // release the lock because a new domain wants to be the main domain
         private readonly EventWaitHandle _signal;
 
@@ -34,7 +36,7 @@ namespace Umbraco.Core
         private volatile bool _signaled; // we have been signaled
 
         // actions to run before releasing the main domain
-        private readonly SortedList<int, Action> _callbacks = new SortedList<int, Action>();
+        private readonly List<KeyValuePair<int, Action>> _callbacks = new List<KeyValuePair<int, Action>>();
 
         private const int LockTimeoutMilliseconds = 90000; // (1.5 * 60 * 1000) == 1 min 30 seconds
 
@@ -52,31 +54,53 @@ namespace Umbraco.Core
             if (HostingEnvironment.ApplicationID != null)
                 appId = HostingEnvironment.ApplicationID.ReplaceNonAlphanumericChars(string.Empty);
 
-            var lockName = "UMBRACO-" + appId + "-MAINDOM-LCK";
+            // combining with the physical path because if running on eg IIS Express,
+            // two sites could have the same appId even though they are different.
+            //
+            // now what could still collide is... two sites, running in two different processes
+            // and having the same appId, and running on the same app physical path
+            //
+            // we *cannot* use the process ID here because when an AppPool restarts it is
+            // a new process for the same application path
+
+            var appPath = HostingEnvironment.ApplicationPhysicalPath;
+            var hash = (appId + ":::" + appPath).ToSHA1();
+
+            var lockName = "UMBRACO-" + hash + "-MAINDOM-LCK";
             _asyncLock = new AsyncLock(lockName);
 
-            var eventName = "UMBRACO-" + appId + "-MAINDOM-EVT";
+            var eventName = "UMBRACO-" + hash + "-MAINDOM-EVT";
             _signal = new EventWaitHandle(false, EventResetMode.AutoReset, eventName);
         }
 
         #endregion
 
-        // register a main domain consumer
+        /// <summary>
+        /// Registers a resource that requires the current AppDomain to be the main domain to function.
+        /// </summary>
+        /// <param name="release">An action to execute before the AppDomain releases the main domain status.</param>
+        /// <param name="weight">An optional weight (lower goes first).</param>
+        /// <returns>A value indicating whether it was possible to register.</returns>
         public bool Register(Action release, int weight = 100)
-        {
-            return Register(null, release, weight);
-        }
+            => Register(null, release, weight);
 
-        // register a main domain consumer
+        /// <summary>
+        /// Registers a resource that requires the current AppDomain to be the main domain to function.
+        /// </summary>
+        /// <param name="install">An action to execute when registering.</param>
+        /// <param name="release">An action to execute before the AppDomain releases the main domain status.</param>
+        /// <param name="weight">An optional weight (lower goes first).</param>
+        /// <returns>A value indicating whether it was possible to register.</returns>
+        /// <remarks>If registering is successful, then the <paramref name="install"/> action
+        /// is guaranteed to execute before the AppDomain releases the main domain status.</remarks>
         public bool Register(Action install, Action release, int weight = 100)
         {
             lock (_locko)
             {
                 if (_signaled) return false;
-                if (install != null)
-                    install();
+                install?.Invoke();
                 if (release != null)
-                    _callbacks.Add(weight, release);
+                    _callbacks.Add(new KeyValuePair<int, Action>(weight, release));
                 return true;
             }
         }
@@ -89,7 +113,7 @@ namespace Umbraco.Core
 
             lock (_locko)
             {
-                _logger.Debug<MainDom>("Signaled" + (_signaled ? " (again)" : "") + " (" + source + ").");
+                _logger.Debug<MainDom>("Signaled {Signaled} ({SignalSource})", _signaled ? "(again)" : string.Empty, source);
                 if (_signaled) return;
                 if (_isMainDom == false) return; // probably not needed
                 _signaled = true;
@@ -97,8 +121,8 @@ namespace Umbraco.Core
 
             try
             {
-                _logger.Debug<MainDom>("Stopping...");
-                foreach (var callback in _callbacks.Values)
+                _logger.Info<MainDom>("Stopping ({SignalSource})", source);
+                foreach (var callback in _callbacks.OrderBy(x => x.Key).Select(x => x.Value))
                 {
                     try
                     {
@@ -106,24 +130,24 @@ namespace Umbraco.Core
                     }
                     catch (Exception e)
                     {
-                        _logger.Error<MainDom>("Error while running callback, remaining callbacks will not run.", e);
+                        _logger.Error<MainDom>(e, "Error while running callback, remaining callbacks will not run.");
                         throw;
                     }
-                    
+
                 }
-                _logger.Debug<MainDom>("Stopped.");
+                _logger.Debug<MainDom>("Stopped ({SignalSource})", source);
             }
             finally
             {
                 // in any case...
                 _isMainDom = false;
                 _asyncLocker.Dispose();
-                _logger.Debug<MainDom>("Released MainDom.");
+                _logger.Info<MainDom>("Released ({SignalSource})", source);
             }
         }
 
         // acquires the main domain
-        public bool Acquire()
+        internal bool Acquire()
         {
             lock (_locko) // we don't want the hosting environment to interfere by signaling
             {
@@ -131,17 +155,17 @@ namespace Umbraco.Core
                 // the handler is not installed so that would be the hosting environment
                 if (_signaled)
                 {
-                    _logger.Debug<MainDom>("Cannot acquire MainDom (signaled).");
+                    _logger.Info<MainDom>("Cannot acquire (signaled).");
                     return false;
                 }
 
-                _logger.Debug<MainDom>("Acquiring MainDom...");
+                _logger.Info<MainDom>("Acquiring.");
 
                 // signal other instances that we want the lock, then wait one the lock,
                 // which may timeout, and this is accepted - see comments below
 
                 // signal, then wait for the lock, then make sure the event is
-                // resetted (maybe there was noone listening..)
+                // reset (maybe there was noone listening..)
                 _signal.Set();
 
                 // if more than 1 instance reach that point, one will get the lock
@@ -151,7 +175,7 @@ namespace Umbraco.Core
                 _isMainDom = true;
 
                 // we need to reset the event, because otherwise we would end up
-                // signaling ourselves and commiting suicide immediately.
+                // signaling ourselves and committing suicide immediately.
                 // only 1 instance can reach that point, but other instances may
                 // have started and be trying to get the lock - they will timeout,
                 // which is accepted
@@ -162,19 +186,18 @@ namespace Umbraco.Core
 
                 HostingEnvironment.RegisterObject(this);
 
-                _logger.Debug<MainDom>("Acquired MainDom.");
+                _logger.Info<MainDom>("Acquired.");
                 return true;
             }
         }
 
-        // gets a value indicating whether we are the main domain
-        public bool IsMainDom
-        {
-            get { return _isMainDom; }
-        }
+        /// <summary>
+        /// Gets a value indicating whether the current domain is the main domain.
+        /// </summary>
+        public bool IsMainDom => _isMainDom;
 
         // IRegisteredObject
-        public void Stop(bool immediate)
+        void IRegisteredObject.Stop(bool immediate)
         {
             try
             {

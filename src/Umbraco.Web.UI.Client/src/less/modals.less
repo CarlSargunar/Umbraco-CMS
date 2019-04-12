@@ -3,14 +3,16 @@
 
 /* Modalcolumn is used for menu panels */
 .umb-modalcolumn {
-	background: white;
+	background: @white;
 }
 
 .umb-modalcolumn-header {
-  background: @grayLighter;
-  border-bottom: 1px solid @grayLight;
-  height: 94px;
-  padding: 5px 20px 0px 20px;
+  border-bottom: 1px solid @gray-9;
+  height: @editorHeaderHeight;
+  box-sizing: border-box;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
   white-space: nowrap
 }
 
@@ -19,13 +21,12 @@
   white-space: nowrap;
   font-size: @fontSizeLarge;
   font-weight: 400;
-  padding-top: 10px !important;
 }
 
 .umb-modalcolumn-body {
 	padding: 0px;
 	background: @white;
-	top: 100px;
+	top: @editorHeaderHeight;
 	position: absolute;
 	left: 0px;
 	right: 0px;
@@ -51,7 +52,17 @@
 	bottom: 0px;
 	left: 0px;
 	right: 0px;
-	position: absolute;;	
+	position: absolute;	
+}
+
+.--notInFront .umb-modalcolumn::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    background: rgba(0,0,0,.4);
 }
 
 /* re-align loader */
@@ -74,15 +85,9 @@
 	bottom: 0px;
 	position: absolute;
 	padding: 0px;
+  background: #fff;
 }
 
-.umb-dialog .umb-btn-toolbar {
-	text-align: right;
-	padding: 15px 20px 10px 20px;
-	margin-top: 30px;
-	clear: both;
-	background: #fff;
-}
 .umb-dialog .umb-btn-toolbar .umb-control-group{
 	border: none;
 	padding: none;
@@ -94,27 +99,27 @@
     top: 0px;
     left: 0px;
     right: 0px;
-    bottom: 90px;
+    bottom: 52px;
 }
 .umb-dialog-body .umb-pane{margin-top: 15px;}
 
 .umb-dialog-footer{
-		border-top: #efefef 1px solid;
-		position: absolute;
-	    overflow:auto;
-	    text-align: right;
-	    
-	    height: 60px;
-	    left: 0px;
-	    right: 0px;
-	    bottom: 0px;
+	position: absolute;
+	overflow:auto;
+	text-align: right; 
+	height: 32px;
+	left: 0px;
+	right: 0px;
+	bottom: 0px;
+    padding: 20px;
+    margin: 0;
 }
 
 /*we will always make sure to wrap iframe dialogs in proper padding*/
 .umbracoDialog{
 	width: auto !Important;
 	height: auto !Important;
-  padding: 20px;
+    padding: 20px;
 }
 .umbracoDialog .umb-pane{margin-left: 0px; margin-right: 0px; margin-top: 0px;}
 .umbracoDialog .umb-dialog-body .umb-pane{margin-left: 20px; margin-right: 20px; margin-top: 20px;}
@@ -125,15 +130,16 @@
 .umb-modal .controls-row{margin-left: 0px !important;}
 
 /* modal and umb-modal are used for right.hand dialogs */
-.modal.fade.in{border: none !important; border-radius: none !important;}
+.modal {
+    border-radius: 0 !important;
+
+    &.fade.in{border: none !important;}
+}
 .umb-modal.fade {
 	outline: none;
 	top: 0 !important;
 	left: -100% !important;
-	width: 0px !important;
-	-webkit-transition: left 0.3s linear, left 0.3s ease-out;
-	-moz-transition: opacity 0.3s linear, top 0.3s ease-out;
-	-o-transition: opacity 0.3s linear, top 0.3s ease-out;
+	width: 0 !important;
 	transition: opacity 0.3s linear, top 0.3s ease-out;
 	height: 100% !important;
 }
@@ -150,10 +156,7 @@
 .umb-modal-left.fade {
 	top: 0 !important;
 	left: -100% !important;
-	width: 0px !important;
-	-webkit-transition: left 0.3s linear, left 0.3s ease-out;
-	-moz-transition: opacity 0.3s linear, top 0.3s ease-out;
-	-o-transition: opacity 0.3s linear, top 0.3s ease-out;
+	width: 0 !important;
 	transition: opacity 0.3s linear, top 0.3s ease-out;
 	height: 100% !important;
 }
@@ -182,7 +185,7 @@
 	width: 640px !important;
 }
 .umb-modal i {
-  font-size: 14px;
+  font-size: 20px;
 } 
 .umb-modal .breadcrumb {
 	background: none;

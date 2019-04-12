@@ -1,102 +1,124 @@
-module.exports = function(karma) {
-  karma.configure({
-    // base path, that will be used to resolve files and exclude
-    basePath: '../..',
+module.exports = function (config) {
 
-    frameworks: ['jasmine'],
+    config.set({
 
-    // list of files / patterns to load in the browser
-    files: [
-        'lib/../build/belle/lib/jquery/jquery.min.js',
-        'lib/angular/1.1.5/angular.js',
-        'lib/angular/1.1.5/angular-cookies.min.js',
-        'lib/angular/1.1.5/angular-mocks.js',
-        'lib/angular/angular-ui-sortable.js',
-        
-        /*
-        For angular 1.2:
-         'lib/angular/1.2/angular.js',
-         'lib/angular/1.2/angular-route.min.js',
-         'lib/angular/1.2/angular-touch.min.js',
-         'lib/angular/1.2/angular-cookies.min.js',
-         'lib/angular/1.2/angular-animate.min.js',
-         'lib/angular/1.2/angular-mocks.js',*/
-         
+        // base path, that will be used to resolve files and exclude
+        basePath: '../..',
 
-         'lib/../build/belle/lib/underscore/underscore-min.js',
-         'lib/umbraco/Extensions.js', 
-         'lib/../build/belle/lib/rgrove-lazyload/lazyload.js',
-         'lib/../build/belle/lib/angular-local-storage/angular-local-storage.min.js',
+        frameworks: ['jasmine'],
 
-         'test/config/app.unit.js',
-         'src/common/mocks/umbraco.servervariables.js',
+        // list of files / patterns to load in the browser
+        files: [
 
-         'src/common/directives/*.js',
-         'src/common/filters/*.js',
-         'src/common/services/*.js',
-         'src/common/security/*.js',
-         'src/common/resources/*.js',
-         'src/common/mocks/**/*.js',
-         'src/views/**/*.controller.js',
-         'test/unit/**/*.spec.js',
-        {pattern: 'lib/**/*.js', watched: true, served: true, included: false}       
-    ],
+            //libraries
+            'node_modules/jquery/dist/jquery.min.js',
+            'node_modules/angular/angular.js',
+            'node_modules/angular-animate/angular-animate.js',
+            'node_modules/angular-cookies/angular-cookies.js',
+            'node_modules/angular-local-storage/dist/angular-local-storage.min.js',
+            'node_modules/angular-route/angular-route.js',
+            'node_modules/angular-sanitize/angular-sanitize.js',
+            'node_modules/angular-mocks/angular-mocks.js',
+            'node_modules/angular-ui-sortable/dist/sortable.js',
+            'node_modules/underscore/underscore-min.js',
+            'node_modules/moment/min/moment-with-locales.js',
+            'lib/umbraco/Extensions.js',
+            'node_modules/lazyload-js/lazyload.min.js',
+            'node_modules/angular-dynamic-locale/dist/tmhDynamicLocale.min.js',
 
-    // list of files to exclude
-    exclude: [],
+            //app bootstrap and loader
+            'test/config/app.unit.js',
 
-    // use dolts reporter, as travis terminal does not support escaping sequences
-    // possible values: 'dots', 'progress', 'junit', 'teamcity'
-    // CLI --reporters progress
-    reporters: ['progress'],
+            //application files
+            '../Umbraco.Web.UI/Umbraco/js/*.controllers.js',
+            '../Umbraco.Web.UI/Umbraco/js/*.directives.js',
+            '../Umbraco.Web.UI/Umbraco/js/*.filters.js',
+            '../Umbraco.Web.UI/Umbraco/js/*.services.js',
+            '../Umbraco.Web.UI/Umbraco/js/*.interceptors.js',
+            '../Umbraco.Web.UI/Umbraco/js/*.security.js',
+            '../Umbraco.Web.UI/Umbraco/js/*.resources.js',
 
-    // web server port
-    // CLI --port 9876
-    port: 9876,
+            //mocked data and routing
+            'src/common/mocks/umbraco.servervariables.js',
+            'src/common/mocks/**/*.js',
 
-    // cli runner port
-    // CLI --runner-port 9100
-    runnerPort: 9100,
+            //tests
+            'test/unit/**/*.spec.js'
+        ],
 
-    // enable / disable colors in the output (reporters and logs)
-    // CLI --colors --no-colors
-    colors: true,
+        // list of files to exclude
+        exclude: [],
 
-    // level of logging
-    // possible values: karma.LOG_DISABLE || karma.LOG_ERROR || karma.LOG_WARN || karma.LOG_INFO || karma.LOG_DEBUG
-    // CLI --log-level debug
-    logLevel: karma.LOG_INFO,
+        // use dolts reporter, as travis terminal does not support escaping sequences
+        // possible values: 'dots', 'progress', 'junit', 'teamcity'
+        // CLI --reporters progress
+        reporters: ['progress', 'junit'],
 
-    // enable / disable watching file and executing tests whenever any file changes
-    // CLI --auto-watch --no-auto-watch
-    autoWatch: false,
+        // web server port
+        // CLI --port 9876
+        port: 9876,
 
-    // Start these browsers, currently available:
-    // - Chrome
-    // - ChromeCanary
-    // - Firefox
-    // - Opera
-    // - Safari (only Mac)
-    // - PhantomJS
-    // - IE (only Windows)
-    // CLI --browsers Chrome,Firefox,Safari
-    browsers: ['PhantomJS'],
+        // cli runner port
+        // CLI --runner-port 9100
+        runnerPort: 9100,
 
-    // If browser does not capture in given timeout [ms], kill it
-    // CLI --capture-timeout 5000
-    captureTimeout: 5000,
+        // enable / disable colors in the output (reporters and logs)
+        // CLI --colors --no-colors
+        colors: true,
 
-    // Auto run tests on start (when browsers are captured) and exit
-    // CLI --single-run --no-single-run
-    singleRun: true,
+        // level of logging
+        // possible values: karma.LOG_DISABLE || karma.LOG_ERROR || karma.LOG_WARN || karma.LOG_INFO || karma.LOG_DEBUG
+        // CLI --log-level debug
+        logLevel: config.LOG_INFO,
 
-    // report which specs are slower than 500ms
-    // CLI --report-slower-than 500
-    reportSlowerThan: 500,
+        // enable / disable watching file and executing tests whenever any file changes
+        // CLI --auto-watch --no-auto-watch
+        autoWatch: false,
 
-    plugins: [
-      'karma-jasmine',
-      'karma-phantomjs-launcher'
-    ]
-  });
+        // Start these browsers, currently available:
+        // - Chrome
+        // - ChromeCanary
+        // - Firefox
+        // - Opera
+        // - Safari (only Mac)
+        // - PhantomJS
+        // - IE (only Windows)
+        // CLI --browsers Chrome,Firefox,Safari
+        browsers: ['PhantomJS'],
+
+        // allow waiting a bit longer, some machines require this
+
+        browserNoActivityTimeout: 100000,     // default 10,000ms
+
+        // Auto run tests on start (when browsers are captured) and exit
+        // CLI --single-run --no-single-run
+        singleRun: true,
+
+        // report which specs are slower than 500ms
+        // CLI --report-slower-than 500
+        reportSlowerThan: 500,
+
+        plugins: [
+            require('karma-jasmine'),
+            require('karma-phantomjs-launcher'),
+            require('karma-junit-reporter')
+        ],
+
+        // the default configuration
+        junitReporter: {
+            outputDir: '', // results will be saved as $outputDir/$browserName.xml
+            outputFile: undefined, // if included, results will be saved as $outputDir/$browserName/$outputFile
+            suite: '', // suite will become the package name attribute in xml testsuite element
+            useBrowserName: true, // add browser name to report and classes names
+            nameFormatter: undefined, // function (browser, result) to customize the name attribute in xml testcase element
+            classNameFormatter: undefined, // function (browser, result) to customize the classname attribute in xml testcase element
+            properties: {} // key value pair of properties to add to the <properties> section of the report
+        },
+
+        client: {
+            jasmine: {
+                random: false
+            }
+        }
+    });
 };

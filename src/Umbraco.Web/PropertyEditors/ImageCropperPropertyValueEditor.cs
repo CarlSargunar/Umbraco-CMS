@@ -1,183 +1,180 @@
 ﻿using Newtonsoft.Json.Linq;
 using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
+using Newtonsoft.Json;
 using Umbraco.Core;
-using Umbraco.Core.Configuration;
 using Umbraco.Core.IO;
 using Umbraco.Core.Logging;
-using Umbraco.Core.Media;
 using Umbraco.Core.Models;
 using Umbraco.Core.Models.Editors;
 using Umbraco.Core.PropertyEditors;
 using Umbraco.Core.PropertyEditors.ValueConverters;
 using Umbraco.Core.Services;
-using Umbraco.Web.Models.ContentEditing;
+using File = System.IO.File;
 
 namespace Umbraco.Web.PropertyEditors
 {
-    internal class ImageCropperPropertyValueEditor : PropertyValueEditorWrapper
+    /// <summary>
+    /// The value editor for the image cropper property editor.
+    /// </summary>
+    internal class ImageCropperPropertyValueEditor : DataValueEditor // TODO: core vs web?
     {
-        public ImageCropperPropertyValueEditor(PropertyValueEditor wrapped) : base(wrapped)
-        {
+        private readonly ILogger _logger;
+        private readonly IMediaFileSystem _mediaFileSystem;
 
+        public ImageCropperPropertyValueEditor(DataEditorAttribute attribute, ILogger logger, IMediaFileSystem mediaFileSystem)
+            : base(attribute)
+        {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _mediaFileSystem = mediaFileSystem ?? throw new ArgumentNullException(nameof(mediaFileSystem));
         }
 
         /// <summary>
         /// This is called to merge in the prevalue crops with the value that is saved - similar to the property value converter for the front-end
         /// </summary>
-           
-        public override object ConvertDbToEditor(Property property, PropertyType propertyType, IDataTypeService dataTypeService)
-        {
-            var val = base.ConvertDbToEditor(property, propertyType, dataTypeService);
 
-            var json = val as JObject;
-            if (json != null)
+        public override object ToEditor(Property property, IDataTypeService dataTypeService, string culture = null, string segment = null)
+        {
+            var val = property.GetValue(culture, segment);
+            if (val == null) return null;
+
+            ImageCropperValue value;
+            try
             {
-                ImageCropperValueConverter.MergePreValues(json, dataTypeService, propertyType.DataTypeDefinitionId);
-                return json;
+                value = JsonConvert.DeserializeObject<ImageCropperValue>(val.ToString());
+            }
+            catch
+            {
+                value = new ImageCropperValue { Src = val.ToString() };
             }
 
-            return val;
+            var dataType = dataTypeService.GetDataType(property.PropertyType.DataTypeId);
+            if (dataType?.Configuration != null)
+                value.ApplyConfiguration(dataType.ConfigurationAs<ImageCropperConfiguration>());
+
+            return value;
         }
-
         /// <summary>
-        /// Overrides the deserialize value so that we can save the file accordingly
+        /// Converts the value received from the editor into the value can be stored in the database.
         /// </summary>
-        /// <param name="editorValue">
-        /// This is value passed in from the editor. We normally don't care what the editorValue.Value is set to because
-        /// we are more interested in the files collection associated with it, however we do care about the value if we 
-        /// are clearing files. By default the editorValue.Value will just be set to the name of the file (but again, we
-        /// just ignore this and deal with the file collection in editorValue.AdditionalData.ContainsKey("files") )
-        /// </param>
-        /// <param name="currentValue">
-        /// The current value persisted for this property. This will allow us to determine if we want to create a new
-        /// file path or use the existing file path.
-        /// </param>
-        /// <returns></returns>
-        public override object ConvertEditorToDb(ContentPropertyData editorValue, object currentValue)
+        /// <param name="editorValue">The value received from the editor.</param>
+        /// <param name="currentValue">The current value of the property</param>
+        /// <returns>The converted value.</returns>
+        /// <remarks>
+        /// <para>The <paramref name="currentValue"/> is used to re-use the folder, if possible.</para>
+        /// <para>editorValue.Value is used to figure out editorFile and, if it has been cleared, remove the old file - but
+        /// it is editorValue.AdditionalData["files"] that is used to determine the actual file that has been uploaded.</para>
+        /// </remarks>
+        public override object FromEditor(ContentPropertyData editorValue, object currentValue)
         {
-
-
-            string oldFile = string.Empty;
-            string newFile = string.Empty;
-            JObject newJson = null;
-            JObject oldJson = null;
-
-            //get the old src path
-            if (currentValue != null && string.IsNullOrEmpty(currentValue.ToString()) == false)
+            // get the current path
+            var currentPath = string.Empty;
+            try
             {
-                try
-                {
-                    oldJson = JObject.Parse(currentValue.ToString());
-                }
-                catch (Exception ex)
-                {
-                    //for some reason the value is invalid so continue as if there was no value there
-                    LogHelper.WarnWithException<ImageCropperPropertyValueEditor>("Could not parse current db value to a JObject", ex);
-                }
-
-                if (oldJson != null && oldJson["src"] != null)
-                {
-                    oldFile = oldJson["src"].Value<string>();
-                }
+                var svalue = currentValue as string;
+                var currentJson = string.IsNullOrWhiteSpace(svalue) ? null : JObject.Parse(svalue);
+                if (currentJson != null && currentJson["src"] != null)
+                    currentPath = currentJson["src"].Value<string>();
             }
+            catch (Exception ex)
+            {
+                // for some reason the value is invalid so continue as if there was no value there
+                _logger.Warn<ImageCropperPropertyValueEditor>(ex, "Could not parse current db value to a JObject.");
+            }
+            if (string.IsNullOrWhiteSpace(currentPath) == false)
+                currentPath = _mediaFileSystem.GetRelativePath(currentPath);
 
-            //get the new src path
+            // get the new json and path
+            JObject editorJson = null;
+            var editorFile = string.Empty;
             if (editorValue.Value != null)
             {
-                newJson = editorValue.Value as JObject;
-                if (newJson != null && newJson["src"] != null)
-                {
-                    newFile = newJson["src"].Value<string>();
-                }
+                editorJson = editorValue.Value as JObject;
+                if (editorJson != null && editorJson["src"] != null)
+                    editorFile = editorJson["src"].Value<string>();
             }
 
-            //compare old and new src path
-            //if not alike, that means we have a new file, or delete the current one... 
-            if (string.IsNullOrEmpty(newFile) || editorValue.AdditionalData.ContainsKey("files"))
+            // ensure we have the required guids
+            var cuid = editorValue.ContentKey;
+            if (cuid == Guid.Empty) throw new Exception("Invalid content key.");
+            var puid = editorValue.PropertyTypeKey;
+            if (puid == Guid.Empty) throw new Exception("Invalid property type key.");
+
+            // editorFile is empty whenever a new file is being uploaded
+            // or when the file is cleared (in which case editorJson is null)
+            // else editorFile contains the unchanged value
+
+            var uploads = editorValue.Files;
+            if (uploads == null) throw new Exception("Invalid files.");
+            var file = uploads.Length > 0 ? uploads[0] : null;
+
+            if (file == null) // not uploading a file
             {
-                var fs = FileSystemProviderManager.Current.GetFileSystemProvider<MediaFileSystem>();
-
-                //if we have an existing file, delete it
-                if (string.IsNullOrEmpty(oldFile) == false)
-                    fs.DeleteFile(fs.GetRelativePath(oldFile), true);
-                else
-                    oldFile = string.Empty;
-
-                //if we have a new file, add it to the media folder and set .src
-
-                if (editorValue.AdditionalData.ContainsKey("files"))
+                // if editorFile is empty then either there was nothing to begin with,
+                // or it has been cleared and we need to remove the file - else the
+                // value is unchanged.
+                if (string.IsNullOrWhiteSpace(editorFile) && string.IsNullOrWhiteSpace(currentPath) == false)
                 {
-                    var files = editorValue.AdditionalData["files"] as IEnumerable<ContentItemFile>;
-                    if (files != null && files.Any())
-                    {
-                        var file = files.First();
-
-                        if (UploadFileTypeValidator.ValidateFileExtension(file.FileName))
-                        {
-                            //create name and folder number
-                            var name = IOHelper.SafeFileName(file.FileName.Substring(file.FileName.LastIndexOf(IOHelper.DirSepChar) + 1, file.FileName.Length - file.FileName.LastIndexOf(IOHelper.DirSepChar) - 1).ToLower());
-
-                            //try to reuse the folder number from the current file
-                            var subfolder = UmbracoConfig.For.UmbracoSettings().Content.UploadAllowDirectories
-                                                ? oldFile.Replace(fs.GetUrl("/"), "").Split('/')[0]
-                                                : oldFile.Substring(oldFile.LastIndexOf("/", StringComparison.Ordinal) + 1).Split('-')[0];
-
-                            //if we dont find one, create a new one
-                            int subfolderId;
-                            var numberedFolder = int.TryParse(subfolder, out subfolderId)
-                                                     ? subfolderId.ToString(CultureInfo.InvariantCulture)
-                                                     : MediaSubfolderCounter.Current.Increment().ToString(CultureInfo.InvariantCulture);
-
-                            //set a file name or full path
-                            var fileName = UmbracoConfig.For.UmbracoSettings().Content.UploadAllowDirectories
-                                               ? Path.Combine(numberedFolder, name)
-                                               : numberedFolder + "-" + name;
-
-                            //save file and assign to the json
-                            using (var fileStream = System.IO.File.OpenRead(file.TempFilePath))
-                            {
-                                var umbracoFile = UmbracoMediaFile.Save(fileStream, fileName);
-                                newJson["src"] = umbracoFile.Url;
-
-                                return newJson.ToString();
-                            }
-                        }
-                    }
+                    _mediaFileSystem.DeleteFile(currentPath);
+                    return null; // clear
                 }
+
+                return editorJson?.ToString(); // unchanged
             }
 
-            //incase we submit nothing back
-            if (editorValue.Value == null)
+            // process the file
+            var filepath = editorJson == null ? null : ProcessFile(editorValue, file, currentPath, cuid, puid);
+
+            // remove all temp files
+            foreach (var f in uploads)
+                File.Delete(f.TempFilePath);
+
+            // remove current file if replaced
+            if (currentPath != filepath && string.IsNullOrWhiteSpace(currentPath) == false)
+                _mediaFileSystem.DeleteFile(currentPath);
+
+            // update json and return
+            if (editorJson == null) return null;
+            editorJson["src"] = filepath == null ? string.Empty : _mediaFileSystem.GetUrl(filepath);
+            return editorJson.ToString();
+        }
+
+        private string ProcessFile(ContentPropertyData editorValue, ContentPropertyFile file, string currentPath, Guid cuid, Guid puid)
+        {
+            // process the file
+            // no file, invalid file, reject change
+            if (UploadFileTypeValidator.ValidateFileExtension(file.FileName) == false)
                 return null;
 
-            return editorValue.Value.ToString();
+            // get the filepath
+            // in case we are using the old path scheme, try to re-use numbers (bah...)
+            var filepath = _mediaFileSystem.GetMediaPath(file.FileName, currentPath, cuid, puid); // fs-relative path
+
+            using (var filestream = File.OpenRead(file.TempFilePath))
+            {
+                // TODO: Here it would make sense to do the auto-fill properties stuff but the API doesn't allow us to do that right
+                // since we'd need to be able to return values for other properties from these methods
+
+                _mediaFileSystem.AddFile(filepath, filestream, true); // must overwrite!
+            }
+
+            return filepath;
         }
-        
-        
 
-        public override string ConvertDbToString(Property property, PropertyType propertyType, Core.Services.IDataTypeService dataTypeService)
+
+        public override string ConvertDbToString(PropertyType propertyType, object value, IDataTypeService dataTypeService)
         {
-            if(property.Value == null || string.IsNullOrEmpty(property.Value.ToString()))
-               return null;
+            if (value == null || string.IsNullOrEmpty(value.ToString()))
+                return null;
 
-            //if we dont have a json structure, we will get it from the property type
-            var val = property.Value.ToString();
+            // if we don't have a json structure, we will get it from the property type
+            var val = value.ToString();
             if (val.DetectIsJson())
                 return val;
 
-            var config = dataTypeService.GetPreValuesByDataTypeId(propertyType.DataTypeDefinitionId).FirstOrDefault();
-            var crops = !string.IsNullOrEmpty(config) ? config : "[]";
-            var newVal = "{src: '" + val + "', crops: " + crops + "}"; 
-            return newVal;
+            // more magic here ;-(
+            var configuration = dataTypeService.GetDataType(propertyType.DataTypeId).ConfigurationAs<ImageCropperConfiguration>();
+            var crops = configuration?.Crops ?? Array.Empty<ImageCropperConfiguration.Crop>();
+            return "{src: '" + val + "', crops: " + crops + "}";
         }
     }
-
-        
 }

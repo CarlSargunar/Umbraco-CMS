@@ -1,65 +1,49 @@
 ﻿using System;
 using System.Linq;
 using Examine;
+using LightInject;
 using Lucene.Net.Store;
 using NUnit.Framework;
-using UmbracoExamine;
+using Umbraco.Tests.Testing;
+using Umbraco.Examine;
+using Umbraco.Core.PropertyEditors;
 
 namespace Umbraco.Tests.UmbracoExamine
 {
-	[TestFixture]
-	public class EventsTest : ExamineBaseTest
-	{
-		[Test]
-		public void Events_Ignoring_Node()
-		{
-			//change the parent id so that they are all ignored
-			var existingCriteria = _indexer.IndexerData;
-			_indexer.IndexerData = new IndexCriteria(existingCriteria.StandardFields, existingCriteria.UserFields, existingCriteria.IncludeNodeTypes, existingCriteria.ExcludeNodeTypes,
-				999); //change to 999
 
-			var isIgnored = false;
+    [TestFixture]
+    [UmbracoTest(Database = UmbracoTestOptions.Database.NewSchemaPerTest)]
+    public class EventsTest : ExamineBaseTest
+    {
+        [Test]
+        public void Events_Ignoring_Node()
+        {
+            using (var luceneDir = new RandomIdRamDirectory())
+            using (var indexer = IndexInitializer.GetUmbracoIndexer(ProfilingLogger, luceneDir,
+                //make parent id 999 so all are ignored
+                validator: new ContentValueSetValidator(false, 999)))
+            using (indexer.ProcessNonAsync())
+            {
+                var searcher = indexer.GetSearcher();
 
-			EventHandler<IndexingNodeDataEventArgs> ignoringNode = (s, e) =>
-				{
-					isIgnored = true;
-				};
+                var contentService = new ExamineDemoDataContentService();
+                //get a node from the data repo
+                var node = contentService.GetPublishedContentByXPath("//*[string-length(@id)>0 and number(@id)>0]")
+                                          .Root
+                                          .Elements()
+                                          .First();
 
-			_indexer.IgnoringNode += ignoringNode;
+                var valueSet = node.ConvertToValueSet(IndexTypes.Content);
+                indexer.IndexItems(new[] { valueSet });
 
-			//get a node from the data repo
-			var node = _contentService.GetPublishedContentByXPath("//*[string-length(@id)>0 and number(@id)>0]")
-			                          .Root
-			                          .Elements()
-			                          .First();
+                var found = searcher.CreateQuery().Id((string)node.Attribute("id")).Execute();
 
-			_indexer.ReIndexNode(node, IndexTypes.Content);
+                Assert.AreEqual(0, found.TotalItemCount);
+            }
 
 
-			Assert.IsTrue(isIgnored);
 
-		}
-
-		private readonly TestContentService _contentService = new TestContentService();
-		private static UmbracoExamineSearcher _searcher;
-		private static UmbracoContentIndexer _indexer;
-		private Lucene.Net.Store.Directory _luceneDir;
-
-	    public override void Initialize()
-	    {
-	        base.Initialize();
-
-            _luceneDir = new RAMDirectory();
-            _indexer = IndexInitializer.GetUmbracoIndexer(_luceneDir);
-            _indexer.RebuildIndex();
-            _searcher = IndexInitializer.GetUmbracoSearcher(_luceneDir);
         }
 
-	    public override void TearDown()
-	    {
-	        base.TearDown();
-            _luceneDir.Dispose();
-        }
-        
-	}
+    }
 }

@@ -49,11 +49,11 @@ When this combination is hit an overview is opened with shortcuts based on the m
                     "name": "Design",
                     "shortcuts": [
                         {
-                            "description": "Add tab",
+                            "description": "Add group",
                             "keys": [
                                 {"key": "alt"},
                                 {"key": "shift"},
-                                {"key": "t"}
+                                {"key": "g"}
                             ]
                         }
                     ]
@@ -107,34 +107,127 @@ When this combination is hit an overview is opened with shortcuts based on the m
 @param {object} model keyboard shortcut model. See description and example above.
 **/
 
-(function() {
-  'use strict';
+(function () {
+    'use strict';
 
-  function KeyboardShortcutsOverviewDirective() {
+    function KeyboardShortcutsOverviewDirective(platformService, overlayService) {
 
-    function link(scope, el, attr, ctrl) {
+        function link(scope, el, attr, ctrl) {
 
-      scope.shortcutOverlay = false;
+            var eventBindings = [];
+            var isMac = platformService.isMac();
+            var overlay = null;
 
-      scope.toggleShortcutsOverlay = function() {
-        scope.shortcutOverlay = !scope.shortcutOverlay;
-      };
+            scope.toggleShortcutsOverlay = function () {
 
+                if(overlay) {
+                    scope.close();
+                } else {
+                    scope.open();
+                }
+
+                if(scope.onToggle) {
+                    scope.onToggle();
+                }
+
+            };
+
+            scope.open = function() {
+                if(!overlay) {
+                    overlay = {
+                        title: "Keyboard shortcuts",
+                        view: "keyboardshortcuts",
+                        hideSubmitButton: true,
+                        shortcuts: scope.model,
+                        close: function() {
+                            scope.close();
+                        }
+                    };
+                    overlayService.open(overlay);
+                }
+            };
+
+            scope.close = function() {
+                if(overlay) {
+                    overlayService.close();
+                    overlay = null;
+                    if(scope.onClose) {
+                        scope.onClose();
+                    }
+                }
+            };
+
+            function onInit() {
+                angular.forEach(scope.model, function (shortcutGroup) {
+                    angular.forEach(shortcutGroup.shortcuts, function (shortcut) {
+
+                        shortcut.platformKeys = [];
+
+                        // get shortcut keys for mac
+                        if (isMac && shortcut.keys && shortcut.keys.mac) {
+                            shortcut.platformKeys = shortcut.keys.mac;
+                            // get shortcut keys for windows
+                        } else if (!isMac && shortcut.keys && shortcut.keys.win) {
+                            shortcut.platformKeys = shortcut.keys.win;
+                            // get default shortcut keys
+                        } else if (shortcut.keys && shortcut && shortcut.keys.length > 0) {
+                            shortcut.platformKeys = shortcut.keys;
+                        }
+
+                    });
+                });
+            }
+
+            onInit();
+
+            eventBindings.push(scope.$watch('model', function(newValue, oldValue){
+                if (newValue !== oldValue) {
+                    onInit();
+                }
+            }));
+
+            eventBindings.push(scope.$watch('showOverlay', function(newValue, oldValue){
+
+                if(newValue === oldValue) {
+                    return;
+                }
+
+                if(newValue === true) {
+                    scope.open();
+                }
+
+                if(newValue === false) {
+                    scope.close();
+                }
+
+            }));
+
+            // clean up
+            scope.$on('$destroy', function () {
+                // unbind watchers
+                for (var e in eventBindings) {
+                    eventBindings[e]();
+                }
+            });
+
+        }
+
+        var directive = {
+            restrict: 'E',
+            replace: true,
+            templateUrl: 'views/components/umb-keyboard-shortcuts-overview.html',
+            link: link,
+            scope: {
+                model: "=",
+                onToggle: "&",
+                showOverlay: "=?",
+                onClose: "&"
+            }
+        };
+
+        return directive;
     }
 
-    var directive = {
-      restrict: 'E',
-      replace: true,
-      templateUrl: 'views/components/umb-keyboard-shortcuts-overview.html',
-      link: link,
-      scope: {
-        model: "="
-      }
-    };
-
-    return directive;
-  }
-
-  angular.module('umbraco.directives').directive('umbKeyboardShortcutsOverview', KeyboardShortcutsOverviewDirective);
+    angular.module('umbraco.directives').directive('umbKeyboardShortcutsOverview', KeyboardShortcutsOverviewDirective);
 
 })();

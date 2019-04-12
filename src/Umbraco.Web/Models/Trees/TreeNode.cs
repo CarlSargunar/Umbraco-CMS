@@ -2,7 +2,9 @@
 using Umbraco.Core.IO;
 using System.Collections.Generic;
 using Umbraco.Core;
+using Umbraco.Core.Composing;
 using Umbraco.Core.Configuration;
+using Umbraco.Core.Exceptions;
 using Umbraco.Web.Models.ContentEditing;
 
 namespace Umbraco.Web.Models.Trees
@@ -25,7 +27,7 @@ namespace Umbraco.Web.Models.Trees
         /// <param name="menuUrl"></param>
         internal TreeNode(string nodeId, string parentId, string getChildNodesUrl, string menuUrl)
         {
-            Mandate.ParameterNotNullOrEmpty(nodeId, "nodeId");            
+            if (string.IsNullOrWhiteSpace(nodeId)) throw new ArgumentNullOrEmptyException(nameof(nodeId));
 
             Id = nodeId;
             ParentId = parentId;
@@ -34,9 +36,10 @@ namespace Umbraco.Web.Models.Trees
             CssClasses = new List<string>();
              //default
             Icon = "icon-folder-close";
+            Path = "-1";
         }
-        
-        [DataMember(Name = "parentId", IsRequired = true)]        
+
+        [DataMember(Name = "parentId", IsRequired = true)]
         public new object ParentId { get; set; }
 
         /// <summary>
@@ -44,13 +47,13 @@ namespace Umbraco.Web.Models.Trees
         /// </summary>
         [DataMember(Name = "hasChildren")]
         public bool HasChildren { get; set; }
-        
+
         /// <summary>
         /// The tree nodetype which refers to the type of node rendered in the tree
         /// </summary>
         [DataMember(Name = "nodeType")]
         public string NodeType { get; set; }
-        
+
         /// <summary>
         /// Optional: The Route path for the editor for this node
         /// </summary>
@@ -110,7 +113,7 @@ namespace Umbraco.Web.Models.Trees
                     return IOHelper.ResolveUrl("~" + Icon.TrimStart('~'));
 
                 //legacy icon path
-                return string.Format("{0}images/umbraco/{1}", GlobalSettings.Path.EnsureEndsWith("/"), Icon);                
+                return string.Format("{0}images/umbraco/{1}", Current.Configs.Global().Path.EnsureEndsWith("/"), Icon);
             }
         }
 

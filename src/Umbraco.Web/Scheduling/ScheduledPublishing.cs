@@ -1,97 +1,95 @@
-using System;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
+﻿using System;
+using System.Linq;
 using Umbraco.Core;
-using Umbraco.Core.Configuration.UmbracoSettings;
 using Umbraco.Core.Logging;
+using Umbraco.Core.Services;
 using Umbraco.Core.Sync;
-using Umbraco.Web.Mvc;
 
 namespace Umbraco.Web.Scheduling
 {
     internal class ScheduledPublishing : RecurringTaskBase
     {
-        private readonly ApplicationContext _appContext;
-        private readonly IUmbracoSettingsSection _settings;
+        private readonly IRuntimeState _runtime;
+        private readonly IContentService _contentService;
+        private readonly IUmbracoContextFactory _umbracoContextFactory;
+        private readonly ILogger _logger;
 
         public ScheduledPublishing(IBackgroundTaskRunner<RecurringTaskBase> runner, int delayMilliseconds, int periodMilliseconds,
-            ApplicationContext appContext, IUmbracoSettingsSection settings)
+            IRuntimeState runtime, IContentService contentService, IUmbracoContextFactory umbracoContextFactory, ILogger logger)
             : base(runner, delayMilliseconds, periodMilliseconds)
         {
-            _appContext = appContext;
-            _settings = settings;
+            _runtime = runtime;
+            _contentService = contentService;
+            _umbracoContextFactory = umbracoContextFactory;
+            _logger = logger;
         }
 
         public override bool PerformRun()
         {
-            throw new NotImplementedException();
-        }
+            if (Suspendable.ScheduledPublishing.CanRun == false)
+                return true; // repeat, later
 
-        public override async Task<bool> PerformRunAsync(CancellationToken token)
-        {            
-            if (_appContext == null) return true; // repeat...
-
-            switch (_appContext.GetCurrentServerRole())
+            switch (_runtime.ServerRole)
             {
-                case ServerRole.Slave:
-                    LogHelper.Debug<ScheduledPublishing>("Does not run on slave servers.");
+                case ServerRole.Replica:
+                    _logger.Debug<ScheduledPublishing>("Does not run on replica servers.");
                     return true; // DO repeat, server role can change
                 case ServerRole.Unknown:
-                    LogHelper.Debug<ScheduledPublishing>("Does not run on servers with unknown role.");
+                    _logger.Debug<ScheduledPublishing>("Does not run on servers with unknown role.");
                     return true; // DO repeat, server role can change
             }
 
             // ensure we do not run if not main domain, but do NOT lock it
-            if (_appContext.MainDom.IsMainDom == false)
+            if (_runtime.IsMainDom == false)
             {
-                LogHelper.Debug<ScheduledPublishing>("Does not run if not MainDom.");
+                _logger.Debug<ScheduledPublishing>("Does not run if not MainDom.");
                 return false; // do NOT repeat, going down
             }
 
-            using (DisposableTimer.DebugDuration<ScheduledPublishing>(() => "Scheduled publishing executing", () => "Scheduled publishing complete"))
+            // do NOT run publishing if not properly running
+            if (_runtime.Level != RuntimeLevel.Run)
             {
-                string umbracoAppUrl = null;
+                _logger.Debug<ScheduledPublishing>("Does not run if run level is not Run.");
+                return true; // repeat/wait
+            }
 
-                try
+            try
+            {
+                // ensure we run with an UmbracoContext, because this may run in a background task,
+                // yet developers may be using the 'current' UmbracoContext in the event handlers
+                //
+                // TODO: or maybe not, CacheRefresherComponent already ensures a context when handling events
+                // - UmbracoContext 'current' needs to be refactored and cleaned up
+                // - batched messenger should not depend on a current HttpContext
+                //    but then what should be its "scope"? could we attach it to scopes?
+                // - and we should definitively *not* have to flush it here (should be auto)
+                //
+                using (var contextReference = _umbracoContextFactory.EnsureUmbracoContext())
                 {
-                    umbracoAppUrl = _appContext.UmbracoApplicationUrl;
-                    if (umbracoAppUrl.IsNullOrWhiteSpace())
+                    try
                     {
-                        LogHelper.Warn<ScheduledPublishing>("No url for service (yet), skip.");
-                        return true; // repeat
+                        // run
+                        var result = _contentService.PerformScheduledPublish(DateTime.Now);
+                        foreach (var grouped in result.GroupBy(x => x.Result))
+                            _logger.Info<ScheduledPublishing>("Scheduled publishing result: '{StatusCount}' items with status {Status}", grouped.Count(), grouped.Key);
                     }
-
-                    var url = umbracoAppUrl + "/RestServices/ScheduledPublish/Index";
-                    using (var wc = new HttpClient())
+                    finally
                     {
-                        var request = new HttpRequestMessage(HttpMethod.Post, url)
-                        {
-                            Content = new StringContent(string.Empty)
-                        };
-                        //pass custom the authorization header
-                        request.Headers.Authorization = AdminTokenAuthorizeAttribute.GetAuthenticationHeaderValue(_appContext);
-
-                        var result = await wc.SendAsync(request, token);
+                        // if running on a temp context, we have to flush the messenger
+                        if (contextReference.IsRoot && Composing.Current.ServerMessenger is BatchedDatabaseServerMessenger m)
+                            m.FlushBatch();
                     }
                 }
-                catch (Exception e)
-                {
-                    LogHelper.Error<ScheduledPublishing>(string.Format("Failed (at \"{0}\").", umbracoAppUrl), e);
-                }
+            }
+            catch (Exception ex)
+            {
+                // important to catch *everything* to ensure the task repeats
+                _logger.Error<ScheduledPublishing>(ex, "Failed.");
             }
 
             return true; // repeat
         }
 
-        public override bool IsAsync
-        {
-            get { return true; }
-        }
-    
-        public override bool RunsOnShutdown
-        {
-            get { return false; }
-        }
+        public override bool IsAsync => false;
     }
 }

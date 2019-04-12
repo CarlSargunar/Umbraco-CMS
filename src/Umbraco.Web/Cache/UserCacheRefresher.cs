@@ -1,38 +1,34 @@
 ﻿using System;
-using Umbraco.Core;
 using Umbraco.Core.Cache;
 using Umbraco.Core.Models.Membership;
-
 using Umbraco.Core.Persistence.Repositories;
-using umbraco.interfaces;
+using Umbraco.Core.Persistence.Repositories.Implement;
 
 namespace Umbraco.Web.Cache
 {
-    /// <summary>
-    /// Handles User cache invalidation/refreshing
-    /// </summary>
     public sealed class UserCacheRefresher : CacheRefresherBase<UserCacheRefresher>
     {
-        protected override UserCacheRefresher Instance
-        {
-            get { return this; }
-        }
+        public UserCacheRefresher(AppCaches appCaches)
+            : base(appCaches)
+        { }
 
-        public override Guid UniqueIdentifier
-        {
-            get { return Guid.Parse(DistributedCache.UserCacheRefresherId); }
-        }
+        #region Define
 
-        public override string Name
-        {
-            get { return "User cache refresher"; }
-        }
+        protected override UserCacheRefresher This => this;
+
+        public static readonly Guid UniqueId = Guid.Parse("E057AF6D-2EE6-41F4-8045-3694010F0AA6");
+
+        public override Guid RefresherUniqueId => UniqueId;
+
+        public override string Name => "User Cache Refresher";
+
+        #endregion
+
+        #region Refresher
 
         public override void RefreshAll()
         {
             ClearAllIsolatedCacheByEntityType<IUser>();
-            if (UserPermissionsCache)
-                UserPermissionsCache.Result.ClearCacheByKeySearch(CacheKeys.UserPermissionsCacheKey);
             base.RefreshAll();
         }
 
@@ -44,20 +40,12 @@ namespace Umbraco.Web.Cache
 
         public override void Remove(int id)
         {
-            var userCache = ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.GetCache<IUser>();
+            var userCache = AppCaches.IsolatedCaches.Get<IUser>();
             if (userCache)
-                userCache.Result.ClearCacheItem(RepositoryBase.GetCacheIdKey<IUser>(id));
+                userCache.Result.Clear(RepositoryCacheKeys.GetKey<IUser>(id));
 
-            if (UserPermissionsCache)
-                UserPermissionsCache.Result.ClearCacheByKeySearch(string.Format("{0}{1}", CacheKeys.UserPermissionsCacheKey, id));
-            
             base.Remove(id);
         }
-
-        private Attempt<IRuntimeCacheProvider> UserPermissionsCache
-        {
-            get { return ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.GetCache<EntityPermission>(); }
-        }
-
+        #endregion
     }
 }

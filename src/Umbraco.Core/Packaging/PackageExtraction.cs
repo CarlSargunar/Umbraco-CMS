@@ -2,29 +2,29 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using ICSharpCode.SharpZipLib.Zip;
+using System.IO.Compression;
 
 namespace Umbraco.Core.Packaging
 {
-    internal class PackageExtraction : IPackageExtraction
+    internal class PackageExtraction
     {
-        public string ReadTextFileFromArchive(string packageFilePath, string fileToRead, out string directoryInPackage)
+        public string ReadTextFileFromArchive(FileInfo packageFile, string fileToRead, out string directoryInPackage)
         {
             string retVal = null;
             bool fileFound = false;
             string foundDir = null;
 
-            ReadZipfileEntries(packageFilePath, (entry, stream) =>
+            ReadZipfileEntries(packageFile, entry =>
             {
                 string fileName = Path.GetFileName(entry.Name);
 
-                if (string.IsNullOrEmpty(fileName) == false &&
-                    fileName.Equals(fileToRead, StringComparison.CurrentCultureIgnoreCase))
+                if (string.IsNullOrEmpty(fileName) == false && fileName.Equals(fileToRead, StringComparison.CurrentCultureIgnoreCase))
                 {
 
                     foundDir = entry.Name.Substring(0, entry.Name.Length - fileName.Length);
                     fileFound = true;
-                    using (var reader = new StreamReader(stream))
+                    using (var entryStream = entry.Open())
+                    using (var reader = new StreamReader(entryStream))
                     {
                         retVal = reader.ReadToEnd();
                         return false;
@@ -36,58 +36,54 @@ namespace Umbraco.Core.Packaging
             if (fileFound == false)
             {
                 directoryInPackage = null;
-                throw new FileNotFoundException(string.Format("Could not find file in package {0}", packageFilePath), fileToRead);
+                throw new FileNotFoundException($"Could not find file in package {packageFile}", fileToRead);
             }
             directoryInPackage = foundDir;
             return retVal;
         }
 
-        private static void CheckPackageExists(string packageFilePath)
+        private static void CheckPackageExists(FileInfo packageFile)
         {
-            if (string.IsNullOrEmpty(packageFilePath))
-            {
-                throw new ArgumentNullException("packageFilePath");
-            }
+            if (packageFile == null) throw new ArgumentNullException(nameof(packageFile));
+            
+            if (!packageFile.Exists)
+                throw new ArgumentException($"Package file: {packageFile} could not be found");
 
-            if (File.Exists(packageFilePath) == false)
-            {
-                if (File.Exists(packageFilePath) == false)
-                    throw new ArgumentException(string.Format("Package file: {0} could not be found", packageFilePath));
-            }
-
-            string extension = Path.GetExtension(packageFilePath).ToLower();
+            var extension = packageFile.Extension;
 
             var alowedExtension = new[] { ".umb", ".zip" };
 
             // Check if the file is a valid package
-            if (alowedExtension.All(ae => ae.Equals(extension) == false))
+            if (alowedExtension.All(ae => ae.InvariantEquals(extension) == false))
             {
-                throw new ArgumentException(
-                    string.Format("Error - file isn't a package. only extentions: \"{0}\" is allowed", string.Join(", ", alowedExtension)));
+                throw new ArgumentException("Error - file isn't a package. only extensions: \"{string.Join(", ", alowedExtension)}\" is allowed");
             }
         }
-        
-        public void CopyFileFromArchive(string packageFilePath, string fileInPackageName, string destinationfilePath)
+
+        public void CopyFileFromArchive(FileInfo packageFile, string fileInPackageName, string destinationfilePath)
         {
-            CopyFilesFromArchive(packageFilePath, new[]{new KeyValuePair<string, string>(fileInPackageName, destinationfilePath) } );
+            CopyFilesFromArchive(packageFile, new[] {(fileInPackageName, destinationfilePath)});
         }
 
-        public void CopyFilesFromArchive(string packageFilePath, IEnumerable<KeyValuePair<string, string>> sourceDestination)
+        public void CopyFilesFromArchive(FileInfo packageFile, IEnumerable<(string packageUniqueFile, string appAbsolutePath)> sourceDestination)
         {
-            var d = sourceDestination.ToDictionary(k => k.Key.ToLower(), v => v.Value);
+            var d = sourceDestination.ToDictionary(k => k.packageUniqueFile.ToLower(), v => v.appAbsolutePath);
 
 
-            ReadZipfileEntries(packageFilePath, (entry, stream) =>
+            ReadZipfileEntries(packageFile, entry =>
             {
-                string fileName = (Path.GetFileName(entry.Name) ?? string.Empty).ToLower();
+                var fileName = (Path.GetFileName(entry.Name) ?? string.Empty).ToLower();
                 if (fileName == string.Empty) { return true; }
 
-                string destination;
-                if (string.IsNullOrEmpty(fileName) == false && d.TryGetValue(fileName, out destination))
+                if (string.IsNullOrEmpty(fileName) == false && d.TryGetValue(fileName, out var destination))
                 {
+                    //ensure the dir exists
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination));
+
                     using (var streamWriter = File.Open(destination, FileMode.Create))
+                    using (var entryStream = entry.Open())
                     {
-                        stream.CopyTo(streamWriter);
+                        entryStream.CopyTo(streamWriter);
                     }
 
                     d.Remove(fileName);
@@ -98,15 +94,15 @@ namespace Umbraco.Core.Packaging
 
             if (d.Any())
             {
-                throw new ArgumentException(string.Format("The following source file(s): \"{0}\" could not be found in archive: \"{1}\"", string.Join("\", \"",d.Keys), packageFilePath));
+                throw new ArgumentException(string.Format("The following source file(s): \"{0}\" could not be found in archive: \"{1}\"", string.Join("\", \"",d.Keys), packageFile));
             }
         }
 
-        public IEnumerable<string> FindMissingFiles(string packageFilePath, IEnumerable<string> expectedFiles)
+        public IEnumerable<string> FindMissingFiles(FileInfo packageFile, IEnumerable<string> expectedFiles)
         {
             var retVal = expectedFiles.ToList();
 
-            ReadZipfileEntries(packageFilePath, (zipEntry, stream) =>
+            ReadZipfileEntries(packageFile, zipEntry =>
             {
                 string fileName = Path.GetFileName(zipEntry.Name);
 
@@ -120,17 +116,16 @@ namespace Umbraco.Core.Packaging
 
         }
 
-        public IEnumerable<string> FindDubletFileNames(string packageFilePath)
+        public IEnumerable<string> FindDuplicateFileNames(FileInfo packageFile)
         {
             var dictionary = new Dictionary<string, List<string>>();
 
 
-            ReadZipfileEntries(packageFilePath, (entry, stream) =>
+            ReadZipfileEntries(packageFile, entry =>
             {
-                string fileName = (Path.GetFileName(entry.Name) ?? string.Empty).ToLower();
+                var fileName = (Path.GetFileName(entry.Name) ?? string.Empty).ToLower();
 
-                List<string> list;
-                if (dictionary.TryGetValue(fileName, out list) == false)
+                if (dictionary.TryGetValue(fileName, out var list) == false)
                 {
                     list = new List<string>();
                     dictionary.Add(fileName, list);
@@ -144,57 +139,46 @@ namespace Umbraco.Core.Packaging
             return dictionary.Values.Where(v => v.Count > 1).SelectMany(v => v);
         }
 
-        public IEnumerable<byte[]> ReadFilesFromArchive(string packageFilePath, IEnumerable<string> filesToGet)
+        public IEnumerable<byte[]> ReadFilesFromArchive(FileInfo packageFile, IEnumerable<string> filesToGet)
         {
-            CheckPackageExists(packageFilePath);
+            CheckPackageExists(packageFile);
 
-            var files = new HashSet<string>(filesToGet.Select(f => f.ToLower()));
+            var files = new HashSet<string>(filesToGet.Select(f => f.ToLowerInvariant()));
 
-            using (var fs = File.OpenRead(packageFilePath))
+            using (var fs = packageFile.OpenRead())
+            using (var zipArchive = new ZipArchive(fs))
             {
-                using (var zipInputStream = new ZipInputStream(fs))
+                foreach (var zipEntry in zipArchive.Entries)
                 {
-                    ZipEntry zipEntry;
-                    while ((zipEntry = zipInputStream.GetNextEntry()) != null)
-                    {
-                        
-                        if (zipEntry.IsDirectory) continue;
+                    if (zipEntry.Name.IsNullOrWhiteSpace() && zipEntry.FullName.EndsWith("/")) continue;
 
-                        if (files.Contains(zipEntry.Name))
+                    if (files.Contains(zipEntry.Name.ToLowerInvariant()))
+                    {
+                        using (var memStream = new MemoryStream())
+                        using (var entryStream = zipEntry.Open())
                         {
-                            using (var memStream = new MemoryStream())
-                            {
-                                zipInputStream.CopyTo(memStream);
-                                yield return memStream.ToArray();
-                                memStream.Close();
-                            }
+                            entryStream.CopyTo(memStream);
+                            memStream.Close();
+                            yield return memStream.ToArray();
                         }
                     }
-
-                    zipInputStream.Close();
                 }
-                fs.Close();
             }
         }
 
-        private void ReadZipfileEntries(string packageFilePath, Func<ZipEntry, ZipInputStream, bool> entryFunc, bool skipsDirectories = true)
+        private void ReadZipfileEntries(FileInfo packageFile, Func<ZipArchiveEntry, bool> entryFunc, bool skipsDirectories = true)
         {
-            CheckPackageExists(packageFilePath);
+            CheckPackageExists(packageFile);
 
-            using (var fs = File.OpenRead(packageFilePath))
+            using (var fs = packageFile.OpenRead())
+            using (var zipArchive = new ZipArchive(fs))
             {
-                using (var zipInputStream = new ZipInputStream(fs))
+                foreach (var zipEntry in zipArchive.Entries)
                 {
-                    ZipEntry zipEntry;
-                    while ((zipEntry = zipInputStream.GetNextEntry()) != null)
-                    {
-                        if (zipEntry.IsDirectory && skipsDirectories) continue;
-                        if (entryFunc(zipEntry, zipInputStream) == false) break;
-                    }
-
-                    zipInputStream.Close();
+                    if (zipEntry.Name.IsNullOrWhiteSpace() && zipEntry.FullName.EndsWith("/") && skipsDirectories)
+                        continue;
+                    if (entryFunc(zipEntry) == false) break;
                 }
-                fs.Close();
             }
         }
     }

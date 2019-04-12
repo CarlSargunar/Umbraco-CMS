@@ -1,19 +1,17 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
-using Umbraco.Core.Models;
-using Umbraco.Web.Mvc;
-using Umbraco.Web.WebApi.Filters;
-using Umbraco.Web.WebApi;
-using System;
-using System.Diagnostics;
-using Umbraco.Web.Dynamics;
+using Umbraco.Core;
+using Umbraco.Core.Models.PublishedContent;
+using Umbraco.Core.Services;
 using Umbraco.Web.Models.TemplateQuery;
+using Umbraco.Web.Mvc;
+using Umbraco.Web.WebApi;
 
 namespace Umbraco.Web.Editors
 {
-    
-
     /// <summary>
     /// The API controller used for building content queries within the template
     /// </summary>
@@ -21,210 +19,146 @@ namespace Umbraco.Web.Editors
     [JsonCamelCaseFormatter]
     public class TemplateQueryController : UmbracoAuthorizedJsonController
     {
-        public TemplateQueryController()
-        { }
-
-        public TemplateQueryController(UmbracoContext umbracoContext)
-            :base(umbracoContext)
-        { }
-
-
-        private static readonly IEnumerable<OperathorTerm> Terms = new List<OperathorTerm>()
-            {
-                new OperathorTerm("is", Operathor.Equals, new [] {"string"}),
-                new OperathorTerm("is not", Operathor.NotEquals, new [] {"string"}),
-                new OperathorTerm("before", Operathor.LessThan, new [] {"datetime"}),
-                new OperathorTerm("before (including selected date)", Operathor.LessThanEqualTo, new [] {"datetime"}),
-                new OperathorTerm("after", Operathor.GreaterThan, new [] {"datetime"}),
-                new OperathorTerm("after (including selected date)", Operathor.GreaterThanEqualTo, new [] {"datetime"}),
-                new OperathorTerm("equals", Operathor.Equals, new [] {"int"}),
-                new OperathorTerm("does not equal", Operathor.NotEquals, new [] {"int"}),
-                new OperathorTerm("contains", Operathor.Contains, new [] {"string"}),
-                new OperathorTerm("does not contain", Operathor.NotContains, new [] {"string"}),
-                new OperathorTerm("greater than", Operathor.GreaterThan, new [] {"int"}),
-                new OperathorTerm("greater than or equal to", Operathor.GreaterThanEqualTo, new [] {"int"}),
-                new OperathorTerm("less than", Operathor.LessThan, new [] {"int"}),
-                new OperathorTerm("less than or equal to", Operathor.LessThanEqualTo, new [] {"int"})
+        private IEnumerable<OperatorTerm> Terms => new List<OperatorTerm>
+        {
+                new OperatorTerm(Services.TextService.Localize("template/is"), Operator.Equals, new [] {"string"}),
+                new OperatorTerm(Services.TextService.Localize("template/isNot"), Operator.NotEquals, new [] {"string"}),
+                new OperatorTerm(Services.TextService.Localize("template/before"), Operator.LessThan, new [] {"datetime"}),
+                new OperatorTerm(Services.TextService.Localize("template/beforeIncDate"), Operator.LessThanEqualTo, new [] {"datetime"}),
+                new OperatorTerm(Services.TextService.Localize("template/after"), Operator.GreaterThan, new [] {"datetime"}),
+                new OperatorTerm(Services.TextService.Localize("template/afterIncDate"), Operator.GreaterThanEqualTo, new [] {"datetime"}),
+                new OperatorTerm(Services.TextService.Localize("template/equals"), Operator.Equals, new [] {"int"}),
+                new OperatorTerm(Services.TextService.Localize("template/doesNotEqual"), Operator.NotEquals, new [] {"int"}),
+                new OperatorTerm(Services.TextService.Localize("template/contains"), Operator.Contains, new [] {"string"}),
+                new OperatorTerm(Services.TextService.Localize("template/doesNotContain"), Operator.NotContains, new [] {"string"}),
+                new OperatorTerm(Services.TextService.Localize("template/greaterThan"), Operator.GreaterThan, new [] {"int"}),
+                new OperatorTerm(Services.TextService.Localize("template/greaterThanEqual"), Operator.GreaterThanEqualTo, new [] {"int"}),
+                new OperatorTerm(Services.TextService.Localize("template/lessThan"), Operator.LessThan, new [] {"int"}),
+                new OperatorTerm(Services.TextService.Localize("template/lessThanEqual"), Operator.LessThanEqualTo, new [] {"int"})
             };
 
-        private static readonly IEnumerable<PropertyModel> Properties = new List<PropertyModel>()
+        private IEnumerable<PropertyModel> Properties => new List<PropertyModel>
             {
-                new PropertyModel() { Name = "Id", Alias = "Id", Type = "int"  },
-                new PropertyModel() { Name = "Name", Alias = "Name", Type = "string"  },
-                //new PropertyModel() { Name = "Url", Alias = "url", Type = "string"  },
-                new PropertyModel() { Name = "Created Date", Alias = "CreateDate", Type = "datetime"  },
-                new PropertyModel() { Name = "Last Updated Date", Alias = "UpdateDate", Type = "datetime"  }
-
+                new PropertyModel { Name = Services.TextService.Localize("template/id"), Alias = "Id", Type = "int" },
+                new PropertyModel { Name = Services.TextService.Localize("template/name"), Alias = "Name", Type = "string" },
+                new PropertyModel { Name = Services.TextService.Localize("template/createdDate"), Alias = "CreateDate", Type = "datetime" },
+                new PropertyModel { Name = Services.TextService.Localize("template/lastUpdatedDate"), Alias = "UpdateDate", Type = "datetime" }
             };
 
         public QueryResultModel PostTemplateQuery(QueryModel model)
         {
-            var umbraco = new UmbracoHelper(UmbracoContext);
-
-            var queryResult = new QueryResultModel();
-
-            var sb = new StringBuilder();
-            
-            sb.Append("CurrentPage.Site()");
-            
-            var timer = new Stopwatch();
-            
-            timer.Start();
-
-            var currentPage = umbraco.TypedContentAtRoot().FirstOrDefault();
-            timer.Stop();
-
-
-            var pointerNode = currentPage;
-
-            // adjust the "FROM"
-            if (model != null && model.Source.Id > 0)
-            {
-                var targetNode = umbraco.TypedContent(model.Source.Id);
-
-                if (targetNode != null)
-                {
-                    var aliases = this.GetChildContentTypeAliases(targetNode, currentPage).Reverse();
-
-                    foreach (var contentTypeAlias in aliases)
-                    {
-                        timer.Start();
-
-                        pointerNode = pointerNode.FirstChild(x => x.DocumentTypeAlias == contentTypeAlias);
-
-                        if (pointerNode == null) break;
-
-                        timer.Stop();
-
-                        sb.AppendFormat(".FirstChild(\"{0}\")", contentTypeAlias);
-                    }
-
-                    if (pointerNode == null || pointerNode.Id != model.Source.Id)
-                    {
-                        // we did not find the path
-                        sb.Clear();
-                        sb.AppendFormat("Umbraco.Content({0})", model.Source.Id);
-                        pointerNode = targetNode;
-                    }
-                }
-            }
-                
-            // TYPE to return if filtered by type            
+            var queryExpression = new StringBuilder();
             IEnumerable<IPublishedContent> contents;
-            if (model != null && string.IsNullOrEmpty(model.ContentType.Alias) == false)
+
+            if (model == null)
             {
-                timer.Start();
-
-                contents = pointerNode.Children.OfTypes(new[] { model.ContentType.Alias });
-
-                timer.Stop();
-                // TODO change to .Children({0})
-                sb.AppendFormat(".Children(\"{0}\")", model.ContentType.Alias);
+                contents = Umbraco.ContentAtRoot().FirstOrDefault().Children();
+                queryExpression.Append("Umbraco.ContentAtRoot().FirstOrDefault().Children()");
             }
             else
             {
-                timer.Start();
-                contents = pointerNode.Children;
-                timer.Stop();
-                sb.Append(".Children");
+                contents = PostTemplateValue(model, queryExpression);
             }
 
-            var clause = string.Empty;
+            // timing should be fairly correct, due to the fact that all the linq statements are yield returned.
+            var timer = new Stopwatch();
+            timer.Start();
+            var results = contents.ToList();
+            timer.Stop();
 
-            // WHERE
-            var token = 0;
-
-            if (model != null)
+            return new QueryResultModel
             {
-                model.Filters = model.Filters.Where(x => x.ConstraintValue != null);
+                QueryExpression = queryExpression.ToString(),
+                ResultCount = results.Count,
+                ExecutionTime = timer.ElapsedMilliseconds,
+                SampleResults = results.Take(20).Select(x => new TemplateQueryResult { Icon = "icon-file", Name = x.Name })
+            };
+        }
 
-                foreach (var condition in model.Filters)
-                {
-                    if(string.IsNullOrEmpty( condition.ConstraintValue)) continue;
+        private IEnumerable<IPublishedContent> PostTemplateValue(QueryModel model, StringBuilder queryExpression)
+        {
+            var indent = Environment.NewLine + "    ";
 
-                
+            // set the source
+            IPublishedContent sourceDocument;
+            if (model.Source != null && model.Source.Id > 0)
+            {
+                sourceDocument = Umbraco.Content(model.Source.Id);
 
-                    var operation = condition.BuildCondition(token);
-
-                    clause = string.IsNullOrEmpty(clause) ? operation : string.Concat(new[] { clause, " && ",  operation });
-
-                    token++;
-                }
-
-                if (string.IsNullOrEmpty(clause) == false)
-                {
-
-                    timer.Start();
-
-                    //clause = "Visible && " + clause;
-
-                    contents = contents.AsQueryable().Where(clause, model.Filters.Select(this.GetConstraintValue).ToArray());
-                    // contents = contents.Where(clause, values.ToArray());
-                    contents = contents.Where(x => x.IsVisible());
-
-                    timer.Stop();
-
-                    clause = string.Format("\"Visible && {0}\",{1}", clause,
-                        string.Join(",", model.Filters.Select(x => x.Property.Type == "string" ? 
-                                                                       string.Format("\"{0}\"", x.ConstraintValue) : x.ConstraintValue).ToArray()));
-
-                    sb.AppendFormat(".Where({0})", clause);
-                }
+                if (sourceDocument == null)
+                    queryExpression.AppendFormat("Umbraco.Content({0})", model.Source.Id);
                 else
-                {
-                    timer.Start();
-
-                    contents = contents.Where(x => x.IsVisible());
-
-                    timer.Stop();
-
-                    sb.Append(".Where(\"Visible\")");
-
-                }
-
-                if (model.Sort != null && string.IsNullOrEmpty(model.Sort.Property.Alias) == false)
-                {
-                    timer.Start();
-
-                    contents = this.SortByDefaultPropertyValue(contents, model.Sort);
-
-                    timer.Stop();
-
-                    var direction = model.Sort.Direction == "ascending" ? string.Empty : " desc";
-
-                    sb.AppendFormat(".OrderBy(\"{0}{1}\")", model.Sort.Property.Alias, direction);
-                }
-
-                if (model.Take > 0)
-                {
-                    timer.Start();
-
-                    contents = contents.Take(model.Take);
-
-                    timer.Stop();
-
-                    sb.AppendFormat(".Take({0})", model.Take);
-                }
+                    queryExpression.AppendFormat("Umbraco.Content(Guid.Parse(\"{0}\"))", sourceDocument.Key);
+            }
+            else
+            {
+                sourceDocument = Umbraco.ContentAtRoot().FirstOrDefault();
+                queryExpression.Append("Umbraco.ContentAtRoot().FirstOrDefault()");
             }
 
-            queryResult.QueryExpression = sb.ToString();
-            queryResult.ExecutionTime = timer.ElapsedMilliseconds;
-            queryResult.ResultCount = contents.Count();
-            queryResult.SampleResults = contents.Take(20).Select(x => new TemplateQueryResult()
-                                                                 {
-                                                                     Icon = "icon-file",
-                                                                     Name = x.Name
-                                                                 });
+            // get children, optionally filtered by type
+            IEnumerable<IPublishedContent> contents;
+            queryExpression.Append(indent);
+            if (model.ContentType != null && !model.ContentType.Alias.IsNullOrWhiteSpace())
+            {
+                contents = sourceDocument == null
+                    ? Enumerable.Empty<IPublishedContent>()
+                    : sourceDocument.ChildrenOfType(model.ContentType.Alias);
+                queryExpression.AppendFormat(".ChildrenOfType(\"{0}\")", model.ContentType.Alias);
+            }
+            else
+            {
+                contents = sourceDocument == null
+                    ? Enumerable.Empty<IPublishedContent>()
+                    : sourceDocument.Children();
+                queryExpression.Append(".Children()");
+            }
 
+            // apply filters
+            foreach (var condition in model.Filters.Where(x => !x.ConstraintValue.IsNullOrWhiteSpace()))
+            {
+                //x is passed in as the parameter alias for the linq where statement clause
+                var operation = condition.BuildCondition<IPublishedContent>("x");
 
-            return queryResult;
+                    //for review - this uses a tonized query rather then the normal linq query.
+                contents = contents.Where(operation.Compile());
+                queryExpression.Append(indent);
+                queryExpression.AppendFormat(".Where({0})", operation);
+            }
+
+            // always add IsVisible() to the query
+            contents = contents.Where(x => x.IsVisible());
+            queryExpression.Append(indent);
+            queryExpression.Append(".Where(x => x.IsVisible())");
+
+            // apply sort
+            if (model.Sort != null && !model.Sort.Property.Alias.IsNullOrWhiteSpace())
+            {
+                contents = SortByDefaultPropertyValue(contents, model.Sort);
+
+                queryExpression.Append(indent);
+                queryExpression.AppendFormat(model.Sort.Direction == "ascending"
+                    ? ".OrderBy(x => x.{0})"
+                    : ".OrderByDescending(x => x.{0})"
+                    , model.Sort.Property.Alias);
+            }
+
+            // take
+            if (model.Take > 0)
+            {
+                contents = contents.Take(model.Take);
+                queryExpression.Append(indent);
+                queryExpression.AppendFormat(".Take({0})", model.Take);
+            }
+
+            return contents;
         }
 
         private object GetConstraintValue(QueryCondition condition)
         {
             switch (condition.Property.Type)
             {
-                case "int" :
+                case "int":
                     return int.Parse(condition.ConstraintValue);
                 case "datetime":
                     DateTime dt;
@@ -234,51 +168,31 @@ namespace Umbraco.Web.Editors
             }
         }
 
-        private IEnumerable<IPublishedContent> SortByDefaultPropertyValue(IEnumerable<IPublishedContent> contents,  SortExpression sortExpression)
+        private IEnumerable<IPublishedContent> SortByDefaultPropertyValue(IEnumerable<IPublishedContent> contents, SortExpression sortExpression)
         {
             switch (sortExpression.Property.Alias)
             {
-                case "id" :
+                case "id":
                     return sortExpression.Direction == "ascending"
-                               ? contents.OrderBy(x => x.Id)
-                               : contents.OrderByDescending(x => x.Id);
-                case "createDate" :
-               
+                        ? contents.OrderBy(x => x.Id)
+                        : contents.OrderByDescending(x => x.Id);
+                case "createDate":
                     return sortExpression.Direction == "ascending"
-                               ? contents.OrderBy(x => x.CreateDate)
-                               : contents.OrderByDescending(x => x.CreateDate);
+                        ? contents.OrderBy(x => x.CreateDate)
+                        : contents.OrderByDescending(x => x.CreateDate);
                 case "publishDate":
-                   
                     return sortExpression.Direction == "ascending"
-                               ? contents.OrderBy(x => x.UpdateDate)
-                               : contents.OrderByDescending(x => x.UpdateDate);
+                        ? contents.OrderBy(x => x.UpdateDate)
+                        : contents.OrderByDescending(x => x.UpdateDate);
                 case "name":
                     return sortExpression.Direction == "ascending"
-                               ? contents.OrderBy(x => x.Name)
-                               : contents.OrderByDescending(x => x.Name);
-                default :
-
+                        ? contents.OrderBy(x => x.Name)
+                        : contents.OrderByDescending(x => x.Name);
+                default:
                     return sortExpression.Direction == "ascending"
-                               ? contents.OrderBy(x => x.Name)
-                               : contents.OrderByDescending(x => x.Name);
-
+                        ? contents.OrderBy(x => x.Name)
+                        : contents.OrderByDescending(x => x.Name);
             }
-        }
-        
-        private IEnumerable<string> GetChildContentTypeAliases(IPublishedContent targetNode, IPublishedContent current)
-        {
-            var aliases = new List<string>();
-    
-            if (targetNode.Id == current.Id) return aliases;
-            if (targetNode.Id != current.Id)
-            {
-                aliases.Add(targetNode.DocumentTypeAlias);
-
-            }
-
-            aliases.AddRange(this.GetChildContentTypeAliases(targetNode.Parent, current));
-
-            return aliases;
         }
 
         /// <summary>
@@ -287,11 +201,11 @@ namespace Umbraco.Web.Editors
         /// <returns></returns>
         public IEnumerable<ContentTypeModel> GetContentTypes()
         {
-            var contentTypes =
-                ApplicationContext.Services.ContentTypeService.GetAllContentTypes()
-                    .Select(x => new ContentTypeModel() { Alias = x.Alias, Name = x.Name })
-                    .OrderBy(x => x.Name).ToList();
-            contentTypes.Insert(0, new ContentTypeModel() { Alias = string.Empty, Name = "Everything" });
+            var contentTypes = Services.ContentTypeService.GetAll()
+                .Select(x => new ContentTypeModel { Alias = x.Alias, Name = Services.TextService.Localize("template/contentOfType", tokens: new string[] { x.Name }) })
+                .OrderBy(x => x.Name).ToList();
+
+            contentTypes.Insert(0, new ContentTypeModel { Alias = string.Empty, Name = Services.TextService.Localize("template/allContent") });
 
             return contentTypes;
         }
@@ -311,7 +225,5 @@ namespace Umbraco.Web.Editors
         {
             return Terms;
         }
-
-
     }
 }

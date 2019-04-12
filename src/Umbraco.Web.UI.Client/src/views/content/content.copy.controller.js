@@ -1,7 +1,6 @@
 angular.module("umbraco").controller("Umbraco.Editors.Content.CopyController",
-	function ($scope, eventsService, contentResource, navigationService, appState, treeService, localizationService, notificationsService) {
+    function ($scope, userService, eventsService, contentResource, navigationService, appState, treeService, localizationService, notificationsService) {
 
-	    var dialogOptions = $scope.dialogOptions;
 	    var searchText = "Search...";
 	    localizationService.localize("general_search").then(function (value) {
 	        searchText = value + "...";
@@ -9,7 +8,7 @@ angular.module("umbraco").controller("Umbraco.Editors.Content.CopyController",
 
 	    $scope.relateToOriginal = true;
 	    $scope.recursive = true;
-	    $scope.dialogTreeEventHandler = $({});
+	    $scope.dialogTreeApi = {};
 	    $scope.busy = false;
 	    $scope.searchInfo = {
 	        searchFromId: null,
@@ -18,59 +17,71 @@ angular.module("umbraco").controller("Umbraco.Editors.Content.CopyController",
 	        results: [],
 	        selectedSearchResults: []
 	    }
+	    $scope.treeModel = {
+	        hideHeader: false
+        }
+        $scope.toggle = toggleHandler;
+	    userService.getCurrentUser().then(function (userData) {
+            $scope.treeModel.hideHeader = userData.startContentIds.length > 0 && userData.startContentIds.indexOf(-1) == -1;
+	    });
 
-	    var node = dialogOptions.currentNode;
+	    $scope.source = _.clone($scope.currentNode);
 
-	    function nodeSelectHandler(ev, args) {
-	        args.event.preventDefault();
-	        args.event.stopPropagation();
+        function treeLoadedHandler(args) {
+            if ($scope.source && $scope.source.path) {
+                $scope.dialogTreeApi.syncTree({ path: $scope.source.path, activate: false });
+            }
+        }
 
-	        if (args.node.metaData.listViewNode) {
-	            //check if list view 'search' node was selected
+	    function nodeSelectHandler(args) {
 
-	            $scope.searchInfo.showSearch = true;
-	            $scope.searchInfo.searchFromId = args.node.metaData.listViewNode.id;
-	            $scope.searchInfo.searchFromName = args.node.metaData.listViewNode.name;
-	        }
-	        else {
-	            eventsService.emit("editors.content.copyController.select", args);
+			if(args && args.event) {
+	        	args.event.preventDefault();
+	        	args.event.stopPropagation();
+			}
 
-	            if ($scope.target) {
-	                //un-select if there's a current one selected
-	                $scope.target.selected = false;
-	            }
+			eventsService.emit("editors.content.copyController.select", args);
 
-	            $scope.target = args.node;
-	            $scope.target.selected = true;
-	        }
+			if ($scope.target) {
+				//un-select if there's a current one selected
+				$scope.target.selected = false;
+			}
+
+			$scope.target = args.node;
+			$scope.target.selected = true;
 
 	    }
 
-	    function nodeExpandedHandler(ev, args) {
-	        if (angular.isArray(args.children)) {
+	    function nodeExpandedHandler(args) {
+			// open mini list view for list views
+          	if (args.node.metaData.isContainer) {
+				openMiniListView(args.node);
+			}
+        }
 
-	            //iterate children
-	            _.each(args.children, function (child) {
-	                //check if any of the items are list views, if so we need to add a custom
-	                // child: A node to activate the search
-	                if (child.metaData.isContainer) {
-	                    child.hasChildren = true;
-	                    child.children = [
-	                        {
-	                            level: child.level + 1,
-	                            hasChildren: false,
-	                            name: searchText,
-	                            metaData: {
-	                                listViewNode: child,
-	                            },
-	                            cssClass: "icon umb-tree-icon sprTree icon-search",
-	                            cssClasses: ["not-published"]
-	                        }
-	                    ];
-	                }
-	            });
-	        }
-	    }
+        function toggleHandler(type){
+            // If the relateToOriginal toggle is clicked
+            if(type === "relate"){
+                if($scope.relateToOriginal){
+                    $scope.relateToOriginal = false;
+                    return;
+                }
+                $scope.relateToOriginal = true;
+            }
+
+            // If the recurvise toggle is clicked
+            if(type === "recursive"){
+                if($scope.recursive){
+                    $scope.recursive = false;
+                    return;
+                }
+                $scope.recursive = true;
+            }
+		}
+		
+		$scope.closeDialog = function() {
+			navigationService.hideDialog();
+		};
 
 	    $scope.hideSearch = function () {
 	        $scope.searchInfo.showSearch = false;
@@ -82,7 +93,7 @@ angular.module("umbraco").controller("Umbraco.Editors.Content.CopyController",
 	    // method to select a search result
 	    $scope.selectResult = function (evt, result) {
 	        result.selected = result.selected === true ? false : true;
-	        nodeSelectHandler(evt, { event: evt, node: result });
+	        nodeSelectHandler({ event: evt, node: result });
 	    };
 
 	    //callback when there are search results
@@ -96,7 +107,7 @@ angular.module("umbraco").controller("Umbraco.Editors.Content.CopyController",
 	        $scope.busy = true;
 	        $scope.error = false;
 
-	        contentResource.copy({ parentId: $scope.target.id, id: node.id, relateToOriginal: $scope.relateToOriginal, recursive: $scope.recursive })
+	        contentResource.copy({ parentId: $scope.target.id, id: $scope.source.id, relateToOriginal: $scope.relateToOriginal, recursive: $scope.recursive })
                 .then(function (path) {
                     $scope.error = false;
                     $scope.success = true;
@@ -119,21 +130,28 @@ angular.module("umbraco").controller("Umbraco.Editors.Content.CopyController",
                 }, function (err) {
                     $scope.success = false;
                     $scope.error = err;
-                    $scope.busy = false;
-                    //show any notifications
-                    if (angular.isArray(err.data.notifications)) {
-                        for (var i = 0; i < err.data.notifications.length; i++) {
-                            notificationsService.showNotification(err.data.notifications[i]);
-                        }
-                    }
+                    $scope.busy = false;                   
                 });
 	    };
 
-	    $scope.dialogTreeEventHandler.bind("treeNodeSelect", nodeSelectHandler);
-	    $scope.dialogTreeEventHandler.bind("treeNodeExpanded", nodeExpandedHandler);
+        $scope.onTreeInit = function () {
+            $scope.dialogTreeApi.callbacks.treeLoaded(treeLoadedHandler);
+            $scope.dialogTreeApi.callbacks.treeNodeSelect(nodeSelectHandler);
+            $scope.dialogTreeApi.callbacks.treeNodeExpanded(nodeExpandedHandler);
+        }
 
-	    $scope.$on('$destroy', function () {
-	        $scope.dialogTreeEventHandler.unbind("treeNodeSelect", nodeSelectHandler);
-	        $scope.dialogTreeEventHandler.unbind("treeNodeExpanded", nodeExpandedHandler);
-	    });
+		// Mini list view
+		$scope.selectListViewNode = function (node) {
+			node.selected = node.selected === true ? false : true;
+			nodeSelectHandler({}, { node: node });
+		};
+
+		$scope.closeMiniListView = function () {
+			$scope.miniListView = undefined;
+		};
+
+		function openMiniListView(node) {
+			$scope.miniListView = node;
+		}
+		
 	});

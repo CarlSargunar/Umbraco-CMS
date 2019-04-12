@@ -6,18 +6,26 @@
  * @description
  * The controller for deleting media
  */
-function MediaEmptyRecycleBinController($scope, mediaResource, treeService, navigationService) {
+function MediaEmptyRecycleBinController($scope, mediaResource, treeService, navigationService, notificationsService, $route) {
+
+    $scope.busy = false;
 
     $scope.performDelete = function() {
 
         //(used in the UI)
+        $scope.busy = true;
         $scope.currentNode.loading = true;
 
-        mediaResource.emptyRecycleBin($scope.currentNode.id).then(function () {
+        mediaResource.emptyRecycleBin($scope.currentNode.id).then(function (result) {
+
+            $scope.busy = false;
             $scope.currentNode.loading = false;
-            //TODO: Need to sync tree, etc...
+
             treeService.removeChildNodes($scope.currentNode);
             navigationService.hideMenu();
+
+            //reload the current view
+            $route.reload();
         });
 
     };

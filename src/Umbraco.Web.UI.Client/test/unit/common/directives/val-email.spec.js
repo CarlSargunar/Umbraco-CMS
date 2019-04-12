@@ -5,7 +5,7 @@
     beforeEach(module('umbraco'));
 
     beforeEach(inject(function ($injector) {
-        //TODO: I have no idea why this doesn't work!!?? it freakin should
+        // TODO: I have no idea why this doesn't work!!?? it freakin should
         //valEmailExpression = $injector.get('valEmailExpression');
 
         //in the meantime, i've had to hard code the regex statement here
@@ -27,7 +27,8 @@
             expect(valEmailExpression.EMAIL_REGEXP.test('a@3b.c')).toBe(true);
             expect(valEmailExpression.EMAIL_REGEXP.test('a@b')).toBe(true);
             expect(valEmailExpression.EMAIL_REGEXP.test('abc@xyz.financial')).toBe(true);
-            
+            expect(valEmailExpression.EMAIL_REGEXP.test('admin@c.pizza')).toBe(true);
+            expect(valEmailExpression.EMAIL_REGEXP.test('admin+gmail-syntax@c.pizza')).toBe(true);            
         });
     });
 

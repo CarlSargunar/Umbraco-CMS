@@ -1,16 +1,19 @@
 angular.module("umbraco")
-    .controller("Umbraco.Overlays.UserController", function ($scope, $location, $timeout, userService, historyService, eventsService, externalLoginInfo, authResource, currentUserResource, formHelper, localizationService) {
+    .controller("Umbraco.Overlays.UserController", function ($scope, $location, $timeout, dashboardResource, userService, historyService, eventsService, externalLoginInfo, authResource, currentUserResource, formHelper, localizationService) {
 
         $scope.history = historyService.getCurrent();
-        $scope.version = Umbraco.Sys.ServerVariables.application.version + " assembly: " + Umbraco.Sys.ServerVariables.application.assemblyVersion;
+        //$scope.version = Umbraco.Sys.ServerVariables.application.version + " assembly: " + Umbraco.Sys.ServerVariables.application.assemblyVersion;
         $scope.showPasswordFields = false;
         $scope.changePasswordButtonState = "init";
-        $scope.model.subtitle = "Umbraco version" + " " + $scope.version;
-
+        $scope.model.title = "user.name";
+        //$scope.model.subtitle = "Umbraco version" + " " + $scope.version;
+        /*
         if(!$scope.model.title) {
-            $scope.model.title = localizationService.localize("general_user");
+            localizationService.localize("general_user").then(function(value){
+                $scope.model.title = value;
+            });
         }
-
+        */
         $scope.externalLoginProviders = externalLoginInfo.providers;
         $scope.externalLinkLoginFormAction = Umbraco.Sys.ServerVariables.umbracoUrls.externalLinkLoginsUrl;
         var evts = [];
@@ -36,14 +39,14 @@ angular.module("umbraco")
 
             //perform the path change, if it is successful then the promise will resolve otherwise it will fail
             $scope.model.close();
-            $location.path("/logout");
+            $location.path("/logout").search('');
         };
 
         $scope.gotoHistory = function (link) {
             $location.path(link);
             $scope.model.close();
         };
-
+        /*
         //Manually update the remaining timeout seconds
         function updateTimeout() {
             $timeout(function () {
@@ -56,7 +59,7 @@ angular.module("umbraco")
 
             }, 1000, false); // 1 second, do NOT execute a global digest
         }
-
+        */
         function updateUserInfo() {
             //get the user
             userService.getCurrentUser().then(function (user) {
@@ -66,7 +69,7 @@ angular.module("umbraco")
                     $scope.remainingAuthSeconds = $scope.user.remainingAuthSeconds;
                     $scope.canEditProfile = _.indexOf($scope.user.allowedSections, "users") > -1;
                     //set the timer
-                    updateTimeout();
+                    //updateTimeout();
 
                     authResource.getCurrentUserLinkedLogins().then(function(logins) {
                         //reset all to be un-linked
@@ -112,16 +115,14 @@ angular.module("umbraco")
 
         /* ---------- UPDATE PASSWORD ---------- */
 
-        //create the initial model for change password property editor
+        //create the initial model for change password
         $scope.changePasswordModel = {
-           alias: "_umb_password",
-           view: "changepassword",
            config: {},
            value: {}
         };
 
         //go get the config for the membership provider and add it to the model
-        currentUserResource.getMembershipProviderConfig().then(function(data) {
+        authResource.getMembershipProviderConfig().then(function(data) {
            $scope.changePasswordModel.config = data;
            //ensure the hasPassword config option is set to true (the user of course has a password already assigned)
            //this will ensure the oldPassword is shown so they can change it
@@ -139,12 +140,15 @@ angular.module("umbraco")
 
                 currentUserResource.changePassword($scope.changePasswordModel.value).then(function(data) {
 
+                    //reset old data 
+                    clearPasswordFields();
+
                     //if the password has been reset, then update our model
                     if (data.value) {
                         $scope.changePasswordModel.value.generatedPassword = data.value;
                     }
 
-                    formHelper.resetForm({ scope: $scope, notifications: data.notifications });
+                    formHelper.resetForm({ scope: $scope });
 
                     $scope.changePasswordButtonState = "success";
                     $timeout(function() {
@@ -169,8 +173,12 @@ angular.module("umbraco")
         }
 
         function clearPasswordFields() {
+           $scope.changePasswordModel.value.oldPassword = "";
            $scope.changePasswordModel.value.newPassword = "";
-           $scope.changePasswordModel.confirm = "";
+           $scope.changePasswordModel.value.confirm = "";
         }
 
+        dashboardResource.getDashboard("user-dialog").then(function (dashboard) {
+            $scope.dashboard = dashboard;
+        });
     });

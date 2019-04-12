@@ -1,7 +1,9 @@
+﻿using System;
 using System.Linq;
 using NUnit.Framework;
+using Umbraco.Core.Composing;
 using Umbraco.Core.Models;
-using Umbraco.Core.Models.EntityBase;
+using Umbraco.Core.Models.Entities;
 using Umbraco.Tests.TestHelpers;
 
 namespace Umbraco.Tests.Models
@@ -12,15 +14,16 @@ namespace Umbraco.Tests.Models
         [SetUp]
         public void Init()
         {
-            var config = SettingsForTests.GetDefault();
-            SettingsForTests.ConfigureSettings(config);
+            Current.Reset();
+            Current.UnlockConfigs();
+            Current.Configs.Add(SettingsForTests.GetDefaultUmbracoSettings);
         }
 
         [Test]
         public void Can_Deep_Clone()
         {
-            var macro = new Macro(1, true, 3, "test", "Test", "blah", "blah", "xslt", false, true, true, "script");
-            macro.Properties.Add(new MacroProperty(6, "rewq", "REWQ", 1, "asdfasdf"));
+            var macro = new Macro(1, Guid.NewGuid(), true, 3, "test", "Test", false, true, true, "~/script.cshtml", MacroTypes.PartialView);
+            macro.Properties.Add(new MacroProperty(6, Guid.NewGuid(), "rewq", "REWQ", 1, "asdfasdf"));
 
             var clone = (Macro)macro.DeepClone();
 
@@ -52,7 +55,7 @@ namespace Umbraco.Tests.Models
             var asDirty = (ICanBeDirty)clone;
 
             Assert.IsFalse(asDirty.IsPropertyDirty("Properties"));
-            clone.Properties.Add(new MacroProperty(3, "asdf", "SDF", 3, "asdfasdf"));
+            clone.Properties.Add(new MacroProperty(3, Guid.NewGuid(), "asdf", "SDF", 3, "asdfasdf"));
             Assert.IsTrue(asDirty.IsPropertyDirty("Properties"));
             Assert.AreEqual(1, clone.AddedProperties.Count());
             clone.Properties.Remove("rewq");

@@ -59,7 +59,6 @@
 </pre>
 
 <h1>General Options</h1>
-Lorem ipsum dolor sit amet..
 <table>
     <thead>
         <tr>
@@ -74,7 +73,7 @@ Lorem ipsum dolor sit amet..
         <td>Set the title of the overlay.</td>
     </tr>
     <tr>
-        <td>model.subTitle</td>
+        <td>model.subtitle</td>
         <td>String</td>
         <td>Set the subtitle of the overlay.</td>
     </tr>
@@ -87,6 +86,11 @@ Lorem ipsum dolor sit amet..
         <td>model.submitButtonLabelKey</td>
         <td>String</td>
         <td>Set an alternate submit button label key for localized texts</td>
+    </tr>
+    <tr>
+        <td>model.submitButtonState</td>
+        <td>String</td>
+        <td>Set the state for the submit button</td>
     </tr>
     <tr>
         <td>model.hideSubmitButton</td>
@@ -117,58 +121,6 @@ Lorem ipsum dolor sit amet..
         <td>model.close</td>
         <td>Function</td>
         <td>Callback function when the overlay closes. Returns a copy of the overlay model object before being modified</td>
-    </tr>
-</table>
-
-
-<h1>Content Picker</h1>
-Opens a content picker.</br>
-<strong>view: </strong>contentpicker
-<table>
-    <thead>
-        <tr>
-            <th>Param</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tr>
-        <td>model.multiPicker</td>
-        <td>Boolean</td>
-        <td>Pick one or multiple items</td>
-    </tr>
-</table>
-<table>
-    <thead>
-        <tr>
-            <th>Returns</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tr>
-        <td>model.selection</td>
-        <td>Array</td>
-        <td>Array of content objects</td>
-    </tr>
-</table>
-
-
-<h1>Icon Picker</h1>
-Opens an icon picker.</br>
-<strong>view: </strong>iconpicker
-<table>
-    <thead>
-        <tr>
-            <th>Returns</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tr>
-        <td>model.icon</td>
-        <td>String</td>
-        <td>The icon class</td>
     </tr>
 </table>
 
@@ -216,170 +168,6 @@ Opens an item picker.</br>
     </tr>
 </table>
 
-<h1>Macro Picker</h1>
-Opens a media picker.</br>
-<strong>view: </strong>macropicker
-<table>
-    <thead>
-        <tr>
-            <th>Param</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>model.dialogData</td>
-            <td>Object</td>
-            <td>Object which contains array of allowedMacros. Set to <code>null</code> to allow all.</td>
-        </tr>
-    </tbody>
-</table>
-<table>
-    <thead>
-        <tr>
-            <th>Returns</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>model.macroParams</td>
-            <td>Array</td>
-            <td>Array of macro params</td>
-        </tr>
-        <tr>
-            <td>model.selectedMacro</td>
-            <td>Object</td>
-            <td>The selected macro</td>
-        </tr>
-    </tbody>
-</table>
-
-<h1>Media Picker</h1>
-Opens a media picker.</br>
-<strong>view: </strong>mediapicker
-<table>
-    <thead>
-        <tr>
-            <th>Param</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>model.multiPicker</td>
-            <td>Boolean</td>
-            <td>Pick one or multiple items</td>
-        </tr>
-        <tr>
-            <td>model.onlyImages</td>
-            <td>Boolean</td>
-            <td>Only display files that have an image file-extension</td>
-        </tr>
-        <tr>
-            <td>model.disableFolderSelect</td>
-            <td>Boolean</td>
-            <td>Disable folder selection</td>
-        </tr>
-    </tbody>
-</table>
-<table>
-    <thead>
-        <tr>
-            <th>Returns</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>model.selectedImages</td>
-            <td>Array</td>
-            <td>Array of selected images</td>
-        </tr>
-    </tbody>
-</table>
-
-<h1>Member Group Picker</h1>
-Opens a member group picker.</br>
-<strong>view: </strong>membergrouppicker
-<table>
-    <thead>
-        <tr>
-            <th>Param</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>model.multiPicker</td>
-            <td>Boolean</td>
-            <td>Pick one or multiple items</td>
-        </tr>
-    </tbody>
-</table>
-<table>
-    <thead>
-        <tr>
-            <th>Returns</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>model.selectedMemberGroup</td>
-            <td>String</td>
-            <td>The selected member group</td>
-        </tr>
-        <tr>
-            <td>model.selectedMemberGroups (multiPicker)</td>
-            <td>Array</td>
-            <td>The selected member groups</td>
-        </tr>
-    </tbody>
-</table>
-
-<h1>Member Picker</h1>
-Opens a member picker. </br>
-<strong>view: </strong>memberpicker
-<table>
-    <thead>
-        <tr>
-            <th>Param</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>model.multiPicker</td>
-            <td>Boolean</td>
-            <td>Pick one or multiple items</td>
-        </tr>
-    </tbody>
-</table>
-<table>
-    <thead>
-        <tr>
-            <th>Returns</th>
-            <th>Type</th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>model.selection</td>
-            <td>Array</td>
-            <td>Array of selected members/td>
-        </tr>
-    </tbody>
-</table>
-
 <h1>YSOD</h1>
 Opens an overlay to show a custom YSOD. </br>
 <strong>view: </strong>ysod
@@ -408,7 +196,7 @@ Opens an overlay to show a custom YSOD. </br>
 (function() {
    'use strict';
 
-   function OverlayDirective($timeout, formHelper, overlayHelper, localizationService) {
+    function OverlayDirective($timeout, formHelper, overlayHelper, localizationService, $q, $templateCache, $http, $compile) {
 
       function link(scope, el, attr, ctrl) {
 
@@ -420,7 +208,8 @@ Opens an overlay to show a custom YSOD. </br>
          var numberOfOverlays = 0;
          var isRegistered = false;
 
-         var modelCopy = {};
+          var modelCopy = {};
+          var unsubscribe = [];
 
          function activate() {
 
@@ -439,7 +228,7 @@ Opens an overlay to show a custom YSOD. </br>
                // this has to be done inside a timeout to ensure the destroy
                // event on other overlays is run before registering a new one
                registerOverlay();
-
+               
                setOverlayIndent();
 
             });
@@ -455,31 +244,56 @@ Opens an overlay to show a custom YSOD. </br>
                   scope.view = "views/common/overlays/" + viewAlias + "/" + viewAlias + ".html";
                }
 
+                //if a custom parent scope is defined then we need to manually compile the view
+                if (scope.parentScope) {
+                    var element = el.find(".scoped-view");
+                    $http.get(scope.view, { cache: $templateCache })
+                        .then(function (response) {
+                            var templateScope = scope.parentScope.$new();
+                            unsubscribe.push(function() {
+                                templateScope.$destroy();
+                            });
+                            templateScope.model = scope.model;
+                            element.html(response.data);
+                            element.show();
+                            $compile(element.contents())(templateScope);
+                        });
+                }
             }
 
          }
 
          function setButtonText() {
-             if (!scope.model.closeButtonLabelKey && !scope.model.closeButtonLabel) {
-                 scope.model.closeButtonLabel = localizationService.localize("general_close");
-             }
-             if (!scope.model.submitButtonLabelKey && !scope.model.submitButtonLabel) {
-                 scope.model.submitButtonLabel = localizationService.localize("general_submit");
-             }
+
+            var labelKeys = [
+                "general_close",
+                "general_submit"
+            ];
+
+            localizationService.localizeMany(labelKeys).then(function (values) {
+                if (!scope.model.closeButtonLabelKey && !scope.model.closeButtonLabel) {
+                    scope.model.closeButtonLabel = values[0];
+                }
+                if (!scope.model.submitButtonLabelKey && !scope.model.submitButtonLabel) {
+                    scope.model.submitButtonLabel = values[1];
+                }
+            });
          }
 
          function registerOverlay() {
 
             overlayNumber = overlayHelper.registerOverlay();
 
-            $(document).bind("keydown.overlay-" + overlayNumber, function(event) {
+            $(document).on("keydown.overlay-" + overlayNumber, function(event) {
 
                if (event.which === 27) {
 
                   numberOfOverlays = overlayHelper.getNumberOfOverlays();
 
-                  if(numberOfOverlays === overlayNumber) {
-                     scope.closeOverLay();
+                  if (numberOfOverlays === overlayNumber) {
+                      scope.$apply(function () {
+                          scope.closeOverLay();
+                      });
                   }
 
                   event.preventDefault();
@@ -494,14 +308,17 @@ Opens an overlay to show a custom YSOD. </br>
                      var activeElementType = document.activeElement.tagName;
                      var clickableElements = ["A", "BUTTON"];
                      var submitOnEnter = document.activeElement.hasAttribute("overlay-submit-on-enter");
+                     var submitOnEnterValue = submitOnEnter ? document.activeElement.getAttribute("overlay-submit-on-enter") : "";
 
                      if(clickableElements.indexOf(activeElementType) === 0) {
-                        document.activeElement.click();
+                        document.activeElement.trigger("click");
                         event.preventDefault();
                      } else if(activeElementType === "TEXTAREA" && !submitOnEnter) {
 
 
-                     } else {
+                     } else if (submitOnEnter && submitOnEnterValue === "false") {
+                         // don't do anything
+                     }else {
                         scope.$apply(function () {
                            scope.submitForm(scope.model);
                         });
@@ -524,7 +341,7 @@ Opens an overlay to show a custom YSOD. </br>
 
                overlayHelper.unregisterOverlay();
 
-               $(document).unbind("keydown.overlay-" + overlayNumber);
+               $(document).off("keydown.overlay-" + overlayNumber);
 
                isRegistered = false;
             }
@@ -536,7 +353,7 @@ Opens an overlay to show a custom YSOD. </br>
             var newObject = {};
 
             for (var key in object) {
-               if (key !== "event") {
+               if (key !== "event" && key !== "parentScope") {
                   newObject[key] = angular.copy(object[key]);
                }
             }
@@ -549,12 +366,12 @@ Opens an overlay to show a custom YSOD. </br>
 
             var overlayIndex = overlayNumber - 1;
             var indentSize = overlayIndex * 20;
-            var overlayWidth = el.context.clientWidth;
+            var overlayWidth = el[0].clientWidth;
 
             el.css('width', overlayWidth - indentSize);
-
-            if(scope.position === "center" || scope.position === "target") {
-               var overlayTopPosition = el.context.offsetTop;
+            
+            if(scope.position === "center" && overlayIndex > 0 || scope.position === "target" && overlayIndex > 0) {
+               var overlayTopPosition = el[0].offsetTop;
                el.css('top', overlayTopPosition + indentSize);
             }
 
@@ -588,8 +405,8 @@ Opens an overlay to show a custom YSOD. </br>
                mousePositionClickY = scope.model.event.pageY;
 
                // element size
-               elementHeight = el.context.clientHeight;
-               elementWidth = el.context.clientWidth;
+               elementHeight = el[0].clientHeight;
+               elementWidth = el[0].clientWidth;
 
                // move element to this position
                position.left = mousePositionClickX - (elementWidth / 2);
@@ -628,15 +445,22 @@ Opens an overlay to show a custom YSOD. </br>
 
          scope.submitForm = function(model) {
             if(scope.model.submit) {
-                 if (formHelper.submitForm({scope: scope})) {
-                    formHelper.resetForm({ scope: scope });
-
-                    if(scope.model.confirmSubmit && scope.model.confirmSubmit.enable && !scope.directive.enableConfirmButton) {
-                        scope.model.submit(model, modelCopy, scope.directive.enableConfirmButton);
-                    } else {
-                        unregisterOverlay();
-                        scope.model.submit(model, modelCopy, scope.directive.enableConfirmButton);
-                    }
+                if (formHelper.submitForm({ scope: scope, skipValidation: scope.model.skipFormValidation})) {
+                    
+                     if (scope.model.confirmSubmit && scope.model.confirmSubmit.enable && !scope.directive.enableConfirmButton) {
+                        //wrap in a when since we don't know if this is a promise or not
+                         $q.when(scope.model.submit(model, modelCopy, scope.directive.enableConfirmButton)).then(
+                             function() {
+                                 formHelper.resetForm({ scope: scope });
+                             });
+                     } else {
+                         unregisterOverlay();
+                         //wrap in a when since we don't know if this is a promise or not
+                         $q.when(scope.model.submit(model, modelCopy, scope.directive.enableConfirmButton)).then(
+                             function() {
+                                 formHelper.resetForm({ scope: scope });
+                             });
+                     }
 
                  }
              }
@@ -650,35 +474,30 @@ Opens an overlay to show a custom YSOD. </br>
 
             unregisterOverlay();
 
-            if (scope.model.close) {
-               scope.model = modelCopy;
+            if (scope.model && scope.model.close) {
+                scope.model = modelCopy;
                scope.model.close(scope.model);
             } else {
                 scope.model.show = false;
-               scope.model = null;
+                scope.model = null;
             }
 
          };
 
-         // angular does not support ng-show on custom directives
-         // width isolated scopes. So we have to make our own.
-         if (attr.hasOwnProperty("ngShow")) {
-            scope.$watch("ngShow", function(value) {
-               if (value) {
-                  el.show();
-                  activate();
-               } else {
-                  unregisterOverlay();
-                  el.hide();
-               }
-            });
-         } else {
-            activate();
-         }
+        scope.outSideClick = function() {
+            if(!scope.model.disableBackdropClick) {
+                scope.closeOverLay();
+            }
+        };
 
-         scope.$on('$destroy', function(){
-            unregisterOverlay();
-         });
+        unsubscribe.push(unregisterOverlay);
+        scope.$on('$destroy', function () {
+           for (var i = 0; i < unsubscribe.length; i++) {
+              unsubscribe[i]();
+           }
+        });
+
+        activate();
 
       }
 
@@ -691,7 +510,8 @@ Opens an overlay to show a custom YSOD. </br>
             ngShow: "=",
             model: "=",
             view: "=",
-            position: "@"
+            position: "@",
+            parentScope: "=?"
          },
          link: link
       };

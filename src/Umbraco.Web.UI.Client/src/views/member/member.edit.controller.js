@@ -6,7 +6,7 @@
  * @description
  * The controller for the member editor
  */
-function MemberEditController($scope, $routeParams, $location, $q, $window, appState, memberResource, entityResource, navigationService, notificationsService, angularHelper, serverValidationManager, contentEditingHelper, fileManager, formHelper, umbModelMapper, editorState, umbRequestHelper, $http) {
+function MemberEditController($scope, $routeParams, $location, appState, memberResource, entityResource, navigationService, notificationsService, localizationService, serverValidationManager, contentEditingHelper, fileManager, formHelper, editorState, umbRequestHelper, $http) {
 
     //setup scope vars
     $scope.page = {};
@@ -17,7 +17,7 @@ function MemberEditController($scope, $routeParams, $location, $q, $window, appS
     $scope.page.nameLocked = false;
     $scope.page.listViewPath = null;
     $scope.page.saveButtonState = "init";
-    $scope.busy = false;
+    $scope.page.exportButton = "init";
 
     $scope.page.listViewPath = ($routeParams.page && $routeParams.listName)
         ? "/member/member/list/" + $routeParams.listName + "?page=" + $routeParams.page
@@ -44,6 +44,11 @@ function MemberEditController($scope, $routeParams, $location, $q, $window, appS
 
                     editorState.set($scope.content);
 
+                    // set all groups to open
+                    angular.forEach($scope.content.tabs, function(group){
+                        group.open = true;
+                    });
+
                     $scope.page.loading = false;
 
                 });
@@ -58,6 +63,11 @@ function MemberEditController($scope, $routeParams, $location, $q, $window, appS
 
                     editorState.set($scope.content);
 
+                    // set all groups to open
+                    angular.forEach($scope.content.tabs, function(group){
+                        group.open = true;
+                    });
+
                     $scope.page.loading = false;
 
                 });
@@ -66,10 +76,10 @@ function MemberEditController($scope, $routeParams, $location, $q, $window, appS
     }
     else {
         //so, we usually refernce all editors with the Int ID, but with members we have
-        //a different pattern, adding a route-redirect here to handle this:
-        //isNumber doesnt work here since its seen as a string
-
-        //TODO: Why is this here - I don't understand why this would ever be an integer? This will not work when we support non-umbraco membership providers.
+        //a different pattern, adding a route-redirect here to handle this just in case.
+        //(isNumber doesnt work here since its seen as a string)
+        //The reason this might be an INT is due to the routing used for the member list view
+        //but this is now configured to use the key, so this is just a fail safe
 
         if ($routeParams.id && $routeParams.id.length < 9) {
 
@@ -106,7 +116,7 @@ function MemberEditController($scope, $routeParams, $location, $q, $window, appS
                     // route but there might be server validation errors in the collection which we need to display
                     // after the redirect, so we will bind all subscriptions which will show the server validation errors
                     // if there are any and then clear them so the collection no longer persists them.
-                    serverValidationManager.executeAndClearAllSubscriptions();
+                    serverValidationManager.notifyAndClearAllSubscriptions();
 
                     $scope.page.loading = false;
 
@@ -120,20 +130,32 @@ function MemberEditController($scope, $routeParams, $location, $q, $window, appS
       if(content.membershipScenario === 0) {
          $scope.page.nameLocked = true;
       }
+    }
 
+    /** Just shows a simple notification that there are client side validation issues to be fixed */
+    function showValidationNotification() {
+        //TODO: We need to make the validation UI much better, there's a lot of inconsistencies in v8 including colors, issues with the property groups and validation errors between variants
+
+        //need to show a notification else it's not clear there was an error.
+        localizationService.localizeMany([
+                "speechBubbles_validationFailedHeader",
+                "speechBubbles_validationFailedMessage"
+            ]
+        ).then(function (data) {
+            notificationsService.error(data[0], data[1]);
+        });
     }
 
     $scope.save = function() {
 
-        if (!$scope.busy && formHelper.submitForm({ scope: $scope, statusMessage: "Saving..." })) {
+        if (formHelper.submitForm({ scope: $scope })) {
 
-            $scope.busy = true;
             $scope.page.saveButtonState = "busy";
 
             memberResource.save($scope.content, $routeParams.create, fileManager.getFiles())
                 .then(function(data) {
 
-                    formHelper.resetForm({ scope: $scope, notifications: data.notifications });
+                    formHelper.resetForm({ scope: $scope });
 
                     contentEditingHelper.handleSuccessfulSave({
                         scope: $scope,
@@ -144,7 +166,6 @@ function MemberEditController($scope, $routeParams, $location, $q, $window, appS
                     });
 
                     editorState.set($scope.content);
-                    $scope.busy = false;
                     $scope.page.saveButtonState = "success";
 
                     var path = buildTreePath(data);
@@ -161,15 +182,20 @@ function MemberEditController($scope, $routeParams, $location, $q, $window, appS
                     });
 
                     editorState.set($scope.content);
-                    $scope.busy = false;
                     $scope.page.saveButtonState = "error";
 
                 });
-        }else{
-            $scope.busy = false;
+        }
+        else {
+            showValidationNotification();
         }
 
     };
+
+    $scope.export = function() {
+        var memberKey = $scope.content.key;
+        memberResource.exportMemberData(memberKey);
+    }
 
 }
 

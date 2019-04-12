@@ -9,7 +9,7 @@
 (function() {
     'use strict';
 
-    function PermissionsController($scope, contentTypeResource, iconHelper, contentTypeHelper, localizationService) {
+    function PermissionsController($scope, contentTypeResource, iconHelper, contentTypeHelper, localizationService, overlayService) {
 
         /* ----------- SCOPE VARIABLES ----------- */
 
@@ -23,6 +23,9 @@
 
         vm.addChild = addChild;
         vm.removeChild = removeChild;
+        vm.toggleAllowAsRoot = toggleAllowAsRoot;
+        vm.toggleAllowCultureVariants = toggleAllowCultureVariants;
+        vm.toggleIsElement = toggleIsElement;
 
         /* ---------- INIT ---------- */
 
@@ -30,16 +33,17 @@
 
         function init() {
 
-            childNodeSelectorOverlayTitle = localizationService.localize("contentTypeEditor_chooseChildNode");
+            localizationService.localize("contentTypeEditor_chooseChildNode").then(function(value){
+                childNodeSelectorOverlayTitle = value;
+            });
 
             contentTypeResource.getAll().then(function(contentTypes){
-
-                vm.contentTypes = contentTypes;
+                vm.contentTypes = _.where(contentTypes, {isElement: false});
 
                 // convert legacy icons
                 iconHelper.formatContentTypeIcons(vm.contentTypes);
 
-                vm.selectedChildren = contentTypeHelper.makeObjectArrayFromId($scope.model.allowedContentTypes, vm.contentTypes);
+                vm.selectedChildren = contentTypeHelper.makeObjectArrayFromId($scope.model.allowedContentTypes, contentTypes);
 
                 if($scope.model.id === 0) {
                    contentTypeHelper.insertChildNodePlaceholder(vm.contentTypes, $scope.model.name, $scope.model.icon, $scope.model.id);
@@ -50,20 +54,25 @@
         }
 
         function addChild($event) {
-            vm.childNodeSelectorOverlay = {
+            var childNodeSelectorOverlay = {
                 view: "itempicker",
                 title: childNodeSelectorOverlayTitle,
                 availableItems: vm.contentTypes,
                 selectedItems: vm.selectedChildren,
+                position: "target",
                 event: $event,
-                show: true,
                 submit: function(model) {
                     vm.selectedChildren.push(model.selectedItem);
                     $scope.model.allowedContentTypes.push(model.selectedItem.id);
-                    vm.childNodeSelectorOverlay.show = false;
-                    vm.childNodeSelectorOverlay = null;
+                    overlayService.close();
+                },
+                close: function() {
+                    overlayService.close();
                 }
             };
+
+            overlayService.open(childNodeSelectorOverlay);
+
         }
 
         function removeChild(selectedChild, index) {
@@ -73,6 +82,20 @@
            // remove from content type model
            var selectedChildIndex = $scope.model.allowedContentTypes.indexOf(selectedChild.id);
            $scope.model.allowedContentTypes.splice(selectedChildIndex, 1);
+        }
+
+        // note: "safe toggling" here ie handling cases where the value is undefined, etc
+
+        function toggleAllowAsRoot() {
+            $scope.model.allowAsRoot = $scope.model.allowAsRoot ? false : true;
+        }
+
+        function toggleAllowCultureVariants() {
+            $scope.model.allowCultureVariant = $scope.model.allowCultureVariant ? false : true;
+        }
+
+        function toggleIsElement() {
+            $scope.model.isElement = $scope.model.isElement ? false : true;
         }
 
     }

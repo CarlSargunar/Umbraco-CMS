@@ -1,6 +1,7 @@
-﻿using System.Collections.Generic;
-using Umbraco.Core.Models.EntityBase;
-using Umbraco.Core.Persistence.Mappers;
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using Umbraco.Core.Models.Entities;
 
 namespace Umbraco.Core.Models.Membership
 {
@@ -10,29 +11,27 @@ namespace Umbraco.Core.Models.Membership
     /// <remarks>Will be left internal until a proper Membership implementation is part of the roadmap</remarks>
     public interface IUser : IMembershipUser, IRememberBeingDirty, ICanBeDirty
     {
+        UserState UserState { get; }
+
         string Name { get; set; }
         int SessionTimeout { get; set; }
-        int StartContentId { get; set; }
-        int StartMediaId { get; set; }
+        int[] StartContentIds { get; set; }
+        int[] StartMediaIds { get; set; }
         string Language { get; set; }
         
-        /// <summary>
-        /// Gets/sets the user type for the user
-        /// </summary>
-        IUserType UserType { get; set; }
+        DateTime? EmailConfirmedDate { get; set; }
+        DateTime? InvitedDate { get; set; }
 
-        //TODO: This should be a private set 
         /// <summary>
-        /// The default permission set for the user
+        /// Gets the groups that user is part of
         /// </summary>
-        /// <remarks>
-        /// Currently in umbraco each permission is a single char but with an Enumerable{string} collection this allows for flexible changes to this in the future
-        /// </remarks>
-        IEnumerable<string> DefaultPermissions { get; set; }
+        IEnumerable<IReadOnlyUserGroup> Groups { get; }
+
+        void RemoveGroup(string group);
+        void ClearGroups();
+        void AddGroup(IReadOnlyUserGroup group);
 
         IEnumerable<string> AllowedSections { get; }
-        void RemoveAllowedSection(string sectionAlias);
-        void AddAllowedSection(string sectionAlias);
 
         /// <summary>
         /// Exposes the basic profile data
@@ -43,5 +42,15 @@ namespace Umbraco.Core.Models.Membership
         /// The security stamp used by ASP.Net identity
         /// </summary>
         string SecurityStamp { get; set; }
+
+        /// <summary>
+        /// Will hold the media file system relative path of the users custom avatar if they uploaded one
+        /// </summary>
+        string Avatar { get; set; }
+
+        /// <summary>
+        /// A Json blob stored for recording tour data for a user
+        /// </summary>
+        string TourData { get; set; }
     }
 }

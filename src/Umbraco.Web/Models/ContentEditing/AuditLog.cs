@@ -6,19 +6,31 @@ namespace Umbraco.Web.Models.ContentEditing
     [DataContract(Name = "auditLog", Namespace = "")]
     public class AuditLog
     {
-        [DataMember(Name = "userId", IsRequired = true)]
+        [DataMember(Name = "userId")]
         public int UserId { get; set; }
 
-        [DataMember(Name = "nodeId", IsRequired = true)]
+        [DataMember(Name = "userName")]
+        public string UserName { get; set; }
+
+        [DataMember(Name = "userAvatars")]
+        public string[] UserAvatars { get; set; }        
+
+        [DataMember(Name = "nodeId")]
         public int NodeId { get; set; }
 
-        [DataMember(Name = "timestamp", IsRequired = true)]
+        [DataMember(Name = "timestamp")]
         public DateTime Timestamp { get; set; }
 
-        [DataMember(Name = "logType", IsRequired = true)]
-        public AuditLogType LogType { get; set; }
+        [DataMember(Name = "logType")]
+        public string LogType { get; set; }
 
-        [DataMember(Name = "comment", IsRequired = true)]
+        [DataMember(Name = "entityType")]
+        public string EntityType { get; set; }
+
+        [DataMember(Name = "comment")]
         public string Comment { get; set; }
+
+        [DataMember(Name = "parameters")]
+        public string Parameters { get; set; }
     }
 }

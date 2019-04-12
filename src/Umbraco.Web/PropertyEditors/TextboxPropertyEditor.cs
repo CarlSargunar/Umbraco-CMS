@@ -1,17 +1,26 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Umbraco.Core;
-using Umbraco.Core.Models;
+﻿using Umbraco.Core;
+using Umbraco.Core.Logging;
 using Umbraco.Core.PropertyEditors;
-using Umbraco.Core.Services;
 
 namespace Umbraco.Web.PropertyEditors
 {
-    [PropertyEditor(Constants.PropertyEditors.TextboxAlias, "Textbox", "textbox", IsParameterEditor = true, Group = "Common")]
-    public class TextboxPropertyEditor : PropertyEditor
-    {        
+    /// <summary>
+    /// Represents a textbox property and parameter editor.
+    /// </summary>
+    [DataEditor(Constants.PropertyEditors.Aliases.TextBox, EditorType.PropertyValue | EditorType.MacroParameter, "Textbox", "textbox", Group = "Common")]
+    public class TextboxPropertyEditor : DataEditor
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TextboxPropertyEditor"/> class.
+        /// </summary>
+        public TextboxPropertyEditor(ILogger logger)
+            : base(logger)
+        { }
+
+        /// <inheritdoc/>
+        protected override IDataValueEditor CreateValueEditor() => new TextOnlyValueEditor(Attribute);
+
+        /// <inheritdoc/>
+        protected override IConfigurationEditor CreateConfigurationEditor() => new TextboxConfigurationEditor();
     }
 }

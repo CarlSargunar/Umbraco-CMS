@@ -1,14 +1,25 @@
 ﻿using System;
 using System.Collections.Generic;
+using Umbraco.Core;
 using Umbraco.Core.Models;
+using Umbraco.Tests.Testing;
 
 namespace Umbraco.Tests.TestHelpers.Entities
 {
     public class MockedContent
     {
+        public static Content CreateBasicContent(IContentType contentType)
+        {
+            var content = new Content("Home", -1, contentType) { Level = 1, SortOrder = 1, CreatorId = 0, WriterId = 0 };
+
+            content.ResetDirtyProperties(false);
+
+            return content;
+        }
+
         public static Content CreateSimpleContent(IContentType contentType)
         {
-            var content = new Content("Home", -1, contentType) { Language = "en-US", Level = 1, SortOrder = 1, CreatorId = 0, WriterId = 0 };
+            var content = new Content("Home", -1, contentType) { Level = 1, SortOrder = 1, CreatorId = 0, WriterId = 0 };
             object obj =
                 new
                     {
@@ -24,9 +35,9 @@ namespace Umbraco.Tests.TestHelpers.Entities
             return content;
         }
 
-        public static Content CreateSimpleContent(IContentType contentType, string name, int parentId)
+        public static Content CreateSimpleContent(IContentType contentType, string name, int parentId = -1, string culture = null, string segment = null)
         {
-            var content = new Content(name, parentId, contentType) { Language = "en-US", CreatorId = 0, WriterId = 0 };
+            var content = new Content(name, parentId, contentType) { CreatorId = 0, WriterId = 0 };
             object obj =
                 new
                 {
@@ -35,34 +46,38 @@ namespace Umbraco.Tests.TestHelpers.Entities
                     author = "John Doe"
                 };
 
-            content.PropertyValues(obj);
+            content.PropertyValues(obj, culture, segment);
 
             content.ResetDirtyProperties(false);
 
             return content;
         }
 
-		public static Content CreateSimpleContent(IContentType contentType, string name, IContent parent)
-		{
-			var content = new Content(name, parent, contentType) { Language = "en-US", CreatorId = 0, WriterId = 0 };
-			object obj =
-				new
-				{
-					title = name + " Subpage",
-					bodyText = "This is a subpage",
-					author = "John Doe"
-				};
+        public static Content CreateSimpleContent(IContentType contentType, string name, IContent parent, string culture = null, string segment = null, bool setPropertyValues = true)
+        {
+            var content = new Content(name, parent, contentType, culture) { CreatorId = 0, WriterId = 0 };
 
-			content.PropertyValues(obj);
+            if (setPropertyValues)
+            {
+                object obj =
+                new
+                {
+                    title = name + " Subpage",
+                    bodyText = "This is a subpage",
+                    author = "John Doe"
+                };
+
+                content.PropertyValues(obj, culture, segment);
+            }
 
             content.ResetDirtyProperties(false);
 
-			return content;
-		}
+            return content;
+        }
 
         public static Content CreateTextpageContent(IContentType contentType, string name, int parentId)
         {
-            var content = new Content(name, parentId, contentType) { Language = "en-US", CreatorId = 0, WriterId = 0};
+            var content = new Content(name, parentId, contentType) { CreatorId = 0, WriterId = 0};
             object obj =
                 new
                 {
@@ -79,9 +94,24 @@ namespace Umbraco.Tests.TestHelpers.Entities
             return content;
         }
 
+        public static Content CreateSimpleContentWithSpecialDatabaseTypes(IContentType contentType, string name, int parentId, string decimalValue, string intValue, DateTime datetimeValue)
+        {
+            var content = new Content(name, parentId, contentType) { CreatorId = 0, WriterId = 0 };
+            object obj = new
+            {
+                decimalProperty = decimalValue,
+                intProperty = intValue,
+                datetimeProperty = datetimeValue
+            };
+
+            content.PropertyValues(obj);
+            content.ResetDirtyProperties(false);
+            return content;
+        }
+
         public static Content CreateAllTypesContent(IContentType contentType, string name, int parentId)
         {
-            var content = new Content("Random Content Name", parentId, contentType) { Language = "en-US", Level = 1, SortOrder = 1, CreatorId = 0, WriterId = 0 };
+            var content = new Content("Random Content Name", parentId, contentType) { Level = 1, SortOrder = 1, CreatorId = 0, WriterId = 0 };
 
             content.SetValue("isTrue", true);
             content.SetValue("number", 42);
@@ -99,10 +129,10 @@ namespace Umbraco.Tests.TestHelpers.Entities
             content.SetValue("date", DateTime.Now.AddDays(-10));
             content.SetValue("ddl", "1234");
             content.SetValue("chklist", "randomc");
-            content.SetValue("contentPicker", 1090);
-            content.SetValue("mediaPicker", 1091);
-            content.SetValue("memberPicker", 1092);
-            content.SetValue("relatedLinks", "<links><link title=\"google\" link=\"http://google.com\" type=\"external\" newwindow=\"0\" /></links>");
+            content.SetValue("contentPicker", Udi.Create(Constants.UdiEntityType.Document, new Guid("74ECA1D4-934E-436A-A7C7-36CC16D4095C")).ToString());
+            content.SetValue("mediaPicker", Udi.Create(Constants.UdiEntityType.Media, new Guid("44CB39C8-01E5-45EB-9CF8-E70AAF2D1691")).ToString());
+            content.SetValue("memberPicker", Udi.Create(Constants.UdiEntityType.Member, new Guid("9A50A448-59C0-4D42-8F93-4F1D55B0F47D")).ToString());
+            content.SetValue("multiUrlPicker", "[{\"name\":\"https://test.com\",\"url\":\"https://test.com\"}]");
             content.SetValue("tags", "this,is,tags");
 
             return content;
@@ -115,7 +145,7 @@ namespace Umbraco.Tests.TestHelpers.Entities
             for (int i = 0; i < amount; i++)
             {
                 var name = "Textpage No-" + i;
-                var content = new Content(name, parentId, contentType) { Language = "en-US", CreatorId = 0, WriterId = 0 };
+                var content = new Content(name, parentId, contentType) { CreatorId = 0, WriterId = 0 };
                 object obj =
                     new
                     {

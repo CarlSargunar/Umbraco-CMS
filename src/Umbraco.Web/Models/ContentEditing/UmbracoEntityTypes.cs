@@ -1,10 +1,13 @@
-﻿namespace Umbraco.Web.Models.ContentEditing
+﻿using System;
+using System.ComponentModel;
+
+namespace Umbraco.Web.Models.ContentEditing
 {
     /// <summary>
     /// Represents the type's of Umbraco entities that can be resolved from the EntityController
     /// </summary>
     public enum UmbracoEntityTypes
-    {   
+    {
         /// <summary>
         /// Domain
         /// </summary>
@@ -49,12 +52,7 @@
         /// Member Group
         /// </summary>
         MemberGroup,
-
-        /// <summary>
-        /// Content Item
-        /// </summary>
-        ContentItem,
-
+        
         /// <summary>
         /// "Media Type
         /// </summary>
@@ -64,10 +62,10 @@
         /// Document Type
         /// </summary>
         DocumentType,
-        
+
         /// <summary>
         /// Stylesheet
-        /// </summary>        
+        /// </summary>
         Stylesheet,
 
         /// <summary>
@@ -88,6 +86,11 @@
         /// <summary>
         /// Property Group
         /// </summary>
-        PropertyGroup
+        PropertyGroup,
+
+        /// <summary>
+        /// Dictionary Item
+        /// </summary>
+        DictionaryItem
     }
 }

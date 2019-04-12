@@ -14,7 +14,7 @@ namespace Umbraco.Tests.Configurations.UmbracoSettings
         [Test]
         public override void UrlProviderMode()
         {
-            Assert.IsTrue(SettingsSection.WebRouting.UrlProviderMode == "AutoLegacy");
+            Assert.IsTrue(SettingsSection.WebRouting.UrlProviderMode == "Auto");
         }
 
         [Test]
@@ -24,9 +24,21 @@ namespace Umbraco.Tests.Configurations.UmbracoSettings
         }
 
         [Test]
+        public void ValidateAlternativeTemplates()
+        {
+            Assert.IsTrue(SettingsSection.WebRouting.ValidateAlternativeTemplates == false);
+        }
+
+        [Test]
         public void DisableFindContentByIdPath()
         {
             Assert.IsTrue(SettingsSection.WebRouting.DisableFindContentByIdPath == false);
+        }
+
+        [Test]
+        public void DisableRedirectUrlTracking()
+        {
+            Assert.IsTrue(SettingsSection.WebRouting.DisableRedirectUrlTracking == false);
         }
     }
 }

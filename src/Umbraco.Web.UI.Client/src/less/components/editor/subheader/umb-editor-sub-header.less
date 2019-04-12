@@ -1,20 +1,46 @@
 .umb-editor-sub-header {
-   padding: 15px 0;
-   margin-bottom: 30px;
-   background: #ffffff;
+   padding: 10px 0;
+   margin-bottom: 10px;
+   background: @brownGrayLight;
+   border-left: 5px solid @brownGrayLight;
+   border-right: 5px solid @brownGrayLight;
+   margin-left: -5px;
+   margin-right: -5px;
    display: flex;
    justify-content: space-between;
-   margin-top: -30px;
+   margin-top: -10px;
    position: relative;
    top: 0;
+   box-sizing: border-box;
+
+    &.nested {
+        margin-top: 0;
+        margin-bottom: 0;
+        background: @brownGrayLight;
+    }
+}
+.umb-editor-sub-header--white {
+    background-color: white;
+    border-color: white;
+}
+
+.umb-editor-sub-header.--state-selection {
+    padding-left: 10px;
+    padding-right: 10px;
+    background-color: @pinkLight;
+    border-radius: 3px;
 }
 
 .umb-editor-sub-header.-umb-sticky-bar {
-   box-shadow: 0 5px 0 rgba(0, 0, 0, 0.08), 0 1px 0 rgba(0, 0, 0, 0.16);
-   transition: box-shadow 1s;
-   top: 101px; /* height of header: 100px + its bottom-border: 1px */
-   margin-top: 0;
-   margin-bottom: 0;
+    box-shadow: 0 6px 3px -3px rgba(0,0,0,.16);
+    transition: box-shadow 240ms;
+    margin-top: 0;
+    margin-bottom: 0;
+    top: calc(@appHeaderHeight + @editorHeaderHeight);
+    
+    .umb-editor--infinityMode & {
+        top: calc(@editorHeaderHeight);
+    }
 }
 
 .umb-group-builder__property-preview .umb-editor-sub-header {
@@ -36,24 +62,23 @@
 }
 
 .umb-editor-sub-header__section {
-   border-left: 1px solid @grayLight;
    display: flex;
    align-items: center;
-   padding-left: 20px;
-   padding-right: 20px;
+   padding-left: 10px;
+   padding-right: 10px;
+}
+
+.umb-editor-sub-header__content-left .umb-editor-sub-header__section {
+   padding-left: 0;
 }
 
 .umb-editor-sub-header__content-left .umb-editor-sub-header__section:first-child {
-   border-left: none;
    padding-left: 0;
 }
 
 .umb-editor-sub-header__content-right .umb-editor-sub-header__section {
-   border-left: none;
-   border-right: 1px solid @grayLight;
+   padding-right: 0;
 }
-
 .umb-editor-sub-header__content-right .umb-editor-sub-header__section:last-child {
-   border-right: none;
    padding-right: 0;
 }

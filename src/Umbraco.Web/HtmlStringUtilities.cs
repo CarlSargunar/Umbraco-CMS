@@ -3,33 +3,33 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Web;
 using HtmlAgilityPack;
+using Umbraco.Web.WebApi.Filters;
 
 namespace Umbraco.Web
 {
     /// <summary>
-    /// Utility class for working with strings and HTML in views
+    /// Provides utility methods for UmbracoHelper for working with strings and HTML in views.
     /// </summary>
-    /// <remarks>
-    /// The UmbracoHelper uses this class for it's string methods
-    /// </remarks>
     public sealed class HtmlStringUtilities
     {
         /// <summary>
-        /// Replaces text line breaks with html line breaks
+        /// Replaces text line breaks with HTML line breaks
         /// </summary>
         /// <param name="text">The text.</param>
-        /// <returns>The text with text line breaks replaced with html linebreaks (<br/>)</returns>
-        public string ReplaceLineBreaksForHtml(string text)
+        /// <returns>The text with text line breaks replaced with HTML line breaks (<br/>)</returns>
+        public HtmlString ReplaceLineBreaksForHtml(string text)
         {
-            return text.Replace("\n", "<br/>\n");
+            return new HtmlString(text.Replace("\r\n", @"<br />").Replace("\n", @"<br />").Replace("\r", @"<br />"));
         }
 
         public HtmlString StripHtmlTags(string html, params string[] tags)
         {
             var doc = new HtmlDocument();
             doc.LoadHtml("<p>" + html + "</p>");
+
             var targets = new List<HtmlNode>();
 
             var nodes = doc.DocumentNode.FirstChild.SelectNodes(".//*");
@@ -55,38 +55,49 @@ namespace Umbraco.Web
             {
                 return new HtmlString(html);
             }
-            return new HtmlString(doc.DocumentNode.FirstChild.InnerHtml);
+            return new HtmlString(doc.DocumentNode.FirstChild.InnerHtml.Replace("  ", " "));
         }
 
-        internal string Join<TIgnore>(string seperator, params object[] args)
+        internal string Join(string separator, params object[] args)
         {
-            var results = args.Where(arg => arg != null && arg.GetType() != typeof(TIgnore)).Select(arg => string.Format("{0}", arg)).Where(sArg => !string.IsNullOrWhiteSpace(sArg)).ToList();
-            return string.Join(seperator, results);
+            var results = args
+                .Where(x => x != null)
+                .Select(x => x.ToString())
+                .Where(x => string.IsNullOrWhiteSpace(x) == false);
+            return string.Join(separator, results);
         }
 
-        internal string Concatenate<TIgnore>(params object[] args)
+        internal string Concatenate(params object[] args)
         {
-            var result = new StringBuilder();
-            foreach (var sArg in args.Where(arg => arg != null && arg.GetType() != typeof(TIgnore)).Select(arg => string.Format("{0}", arg)).Where(sArg => !string.IsNullOrWhiteSpace(sArg)))
+            var sb = new StringBuilder();
+            foreach (var arg in args
+                .Where(x => x != null)
+                .Select(x => x.ToString())
+                .Where(x => string.IsNullOrWhiteSpace(x) == false))
             {
-                result.Append(sArg);
+                sb.Append(arg);
             }
-            return result.ToString();
+            return sb.ToString();
         }
 
-        internal string Coalesce<TIgnore>(params object[] args)
+        internal string Coalesce(params object[] args)
         {
-            foreach (var sArg in args.Where(arg => arg != null && arg.GetType() != typeof(TIgnore)).Select(arg => string.Format("{0}", arg)).Where(sArg => !string.IsNullOrWhiteSpace(sArg)))
-            {
-                return sArg;
-            }
-            return string.Empty;
+            var arg = args
+                .Where(x => x != null)
+                .Select(x => x.ToString())
+                .FirstOrDefault(x => string.IsNullOrWhiteSpace(x) == false);
+
+            return arg ?? string.Empty;
         }
 
         public IHtmlString Truncate(string html, int length, bool addElipsis, bool treatTagsAsContent)
         {
+            const string hellip = "&hellip;";
+
             using (var outputms = new MemoryStream())
             {
+                bool lengthReached = false;
+
                 using (var outputtw = new StreamWriter(outputms))
                 {
                     using (var ms = new MemoryStream())
@@ -101,12 +112,11 @@ namespace Umbraco.Web
                             using (TextReader tr = new StreamReader(ms))
                             {
                                 bool isInsideElement = false,
-                                    lengthReached = false,
                                     insideTagSpaceEncountered = false,
                                     isTagClose = false;
 
                                 int ic = 0,
-                                    currentLength = 0,
+                                    //currentLength = 0,
                                     currentTextLength = 0;
 
                                 string currentTag = string.Empty,
@@ -141,6 +151,10 @@ namespace Umbraco.Web
                                             {
                                                 string thisTag = tagStack.Pop();
                                                 outputtw.Write("</" + thisTag + ">");
+                                                if (treatTagsAsContent)
+                                                {
+                                                    currentTextLength++;
+                                                }
                                             }
                                             if (!isTagClose && currentTag.Length > 0)
                                             {
@@ -148,6 +162,10 @@ namespace Umbraco.Web
                                                 {
                                                     tagStack.Push(currentTag);
                                                     outputtw.Write("<" + currentTag);
+                                                    if (treatTagsAsContent)
+                                                    {
+                                                        currentTextLength++;
+                                                    }
                                                     if (!string.IsNullOrEmpty(tagContents))
                                                     {
                                                         if (tagContents.EndsWith("/"))
@@ -205,16 +223,23 @@ namespace Umbraco.Web
                                         {
                                             var charToWrite = (char)ic;
                                             outputtw.Write(charToWrite);
-                                            currentLength++;
+                                            //currentLength++;
                                         }
                                     }
 
                                     if (!lengthReached && currentTextLength >= length)
                                     {
+                                        // if the last character added was the first of a two character unicode pair, add the second character
+                                        if (Char.IsHighSurrogate((char)ic))
+                                        {
+                                            var lowSurrogate = tr.Read();
+                                            outputtw.Write((char)lowSurrogate);
+                                        }
+
                                         // Reached truncate limit.
                                         if (addElipsis)
                                         {
-                                            outputtw.Write("&hellip;");
+                                            outputtw.Write(hellip);
                                         }
                                         lengthReached = true;
                                     }
@@ -228,10 +253,64 @@ namespace Umbraco.Web
                     outputms.Position = 0;
                     using (TextReader outputtr = new StreamReader(outputms))
                     {
-                        return new HtmlString(outputtr.ReadToEnd().Replace("  ", " ").Trim());
+                        string result = string.Empty;
+
+                        string firstTrim = outputtr.ReadToEnd().Replace("  ", " ").Trim();
+
+                        // Check to see if there is an empty char between the hellip and the output string
+                        // if there is, remove it
+                        if (addElipsis && lengthReached && string.IsNullOrWhiteSpace(firstTrim) == false)
+                        {
+                            result = firstTrim[firstTrim.Length - hellip.Length - 1] == ' ' ? firstTrim.Remove(firstTrim.Length - hellip.Length - 1, 1) : firstTrim;
+                        }
+                        else
+                        {
+                            result = firstTrim;
+                        }
+
+                        return new HtmlString(result);
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Returns the length of the words from a HTML block
+        /// </summary>
+        /// <param name="html">HTML text</param>
+        /// <param name="words">Amount of words you would like to measure</param>
+        /// <param name="tagsAsContent"></param>
+        /// <returns></returns>
+        public int WordsToLength(string html, int words)
+        {
+            HtmlDocument doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            int wordCount = 0,
+                length = 0,
+                maxWords = words;
+
+            html = StripHtmlTags(html, null).ToString();
+
+            while (length < html.Length)
+            {
+                // Check to see if the current wordCount reached the maxWords allowed
+                if (wordCount.Equals(maxWords)) break;
+                // Check if current char is part of a word
+                while (length < html.Length && char.IsWhiteSpace(html[length]) == false)
+                {
+                    length++;
+                }
+
+                wordCount++;
+
+                // Skip whitespace until the next word
+                while (length < html.Length && char.IsWhiteSpace(html[length]) && wordCount.Equals(maxWords) == false)
+                {
+                    length++;
+                }
+            }
+            return length;
         }
     }
 }

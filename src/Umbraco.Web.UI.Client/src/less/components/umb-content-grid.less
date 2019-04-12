@@ -1,25 +1,52 @@
 .umb-content-grid {
-   display: flex;
-   flex-direction: row;
-   flex-wrap: wrap;
-   justify-content: center;
+   display: grid;
+   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+   grid-template-rows: auto;
+   grid-gap: 15px;
 }
 
 .umb-content-grid__item {
-   background: @grayLighter;
+   background: @white;
    flex: 0 1 200px;
    cursor: pointer;
    position: relative;
-   margin: 10px;
    user-select: none;
+   box-shadow: 0 1px 1px 0 rgba(0,0,0,0.16);
+   border-radius: 3px;
 }
 
-.umb-content-grid__item.-selected {
-    box-shadow: 0 2px 8px 0 rgba(0,0,0,0.35);
+.umb-content-grid__item {
+    &.-selected, &:hover {
+        &::before {
+            content: "";
+            position: absolute;
+            z-index: 2;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            border: 2px solid @ui-selected-border;
+            border-radius: 5px;
+            box-shadow: 0 0 4px 0 darken(@ui-selected-border, 20), inset 0 0 2px 0 darken(@ui-selected-border, 20);
+            pointer-events: none;
+        }
+        
+    }
+}
+
+
+.umb-content-grid__item:hover {    
+    &::before {
+        opacity: .33;
+    }
+}
+.umb-content-grid__item.-selected:hover {    
+    &::before {
+        opacity: .75;
+    }
 }
 
 .umb-content-grid__icon-container {
-   background: lighten(@grayLight, 7%);
    height: 75px;
    display: flex;
    align-items: center;
@@ -29,14 +56,9 @@
 .umb-content-grid__icon,
 .umb-content-grid__icon[class^="icon-"],
 .umb-content-grid__icon[class*=" icon-"] {
-   font-size: 40px;
-   color: lighten(@gray, 20%);
+   font-size: 20px;
+   margin-right: 5px;
 }
-
-.umb-content-grid__icon.-light {
-   color: @grayLight;
-}
-
 
 .umb-content-grid__content {
    box-sizing: border-box;
@@ -45,31 +67,34 @@
 
 .umb-content-grid__item-name {
    font-weight: bold;
-   margin-bottom: 10px;
-   color: black;
-   padding-bottom: 10px;
+   margin-bottom: 15px;
    line-height: 1.4em;
-   border-bottom: 1px solid @grayLight;
-   display: inline-block;
+   display: inline-flex;
+   
+   color: @ui-option-type;
+   &:hover, &:focus {
+       text-decoration: none;
+       color:@ui-option-type-hover;
+   }
 }
 
-.umb-content-grid__item-name:hover {
+.umb-content-grid__item-name:hover span {
     text-decoration: underline;
 }
 
 .umb-content-grid__item-name.-light {
-   color: @grayLight;
+   color: @gray-5;
 }
 
 .umb-content-grid__details-list {
    list-style: none;
    margin-bottom: 0;
    margin-left: 0;
-   font-size: 11px;
+   font-size: 12px;
 }
 
 .umb-content-grid__details-list.-light {
-   color: @grayLight;
+   color: @gray-5;
 }
 
 .umb-content-grid__details-label {
@@ -79,22 +104,23 @@
 
 .umb-content-grid__details-value {
    display: inline-block;
+   word-break: break-word;
 }
 
 .umb-content-grid__checkmark {
    position: absolute;
    top: 10px;
    right: 10px;
-   border: 1px solid #ffffff;
-   width: 25px;
-   height: 25px;
-   background: @blue;
+   border: 2px solid @white;
+   width: 26px;
+   height: 26px;
+   background: @green;
    border-radius: 50px;
    box-sizing: border-box;
    display: flex;
    justify-content: center;
    align-items: center;
-   color: #ffffff;
+   color: @white;
    cursor: pointer;
 }
 
@@ -108,7 +134,7 @@
 .umb-content-grid__no-items {
    font-size: 16px;
    font-weight: bold;
-   color: @grayLight;
+   color: @gray-8;
    padding-top: 50px;
    padding-bottom: 50px;
 }

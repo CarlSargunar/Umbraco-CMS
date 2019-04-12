@@ -1,80 +1,41 @@
-using System;
+ï»¿using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Globalization;
 using System.Linq;
 using System.Web;
-using Examine.LuceneEngine.SearchCriteria;
-using Umbraco.Core.Models;
-using Umbraco.Core.Models.PublishedContent;
-using Umbraco.Core.Services;
-using Umbraco.Web.Models;
+using Examine;
 using Umbraco.Core;
-using Umbraco.Web.Routing;
-using ContentType = umbraco.cms.businesslogic.ContentType;
+using Umbraco.Core.Models.PublishedContent;
+using Umbraco.Core.Models;
+using Umbraco.Core.Services;
+using Umbraco.Examine;
+using Umbraco.Web.Composing;
+using Umbraco.Web.PublishedCache;
 
 namespace Umbraco.Web
 {
     /// <summary>
     /// Provides extension methods for <c>IPublishedContent</c>.
     /// </summary>
-	public static class PublishedContentExtensions
+    public static class PublishedContentExtensions
     {
-        #region Key
-
-        public static Guid GetKey(this IPublishedContent content)
-        {
-            var contentWithKey = content as IPublishedContentWithKey;
-            return contentWithKey == null ? Guid.Empty : contentWithKey.Key;
-        }
-
-        #endregion
+        // see notes in PublishedElementExtensions
+        //
+        private static IPublishedValueFallback PublishedValueFallback => Current.PublishedValueFallback;
+        private static IPublishedSnapshot PublishedSnapshot => Current.PublishedSnapshot;
 
         #region Urls
 
         /// <summary>
-		/// Gets the url for the content.
-		/// </summary>
-		/// <param name="content">The content.</param>
-		/// <returns>The url for the content.</returns>
-		[Obsolete("NiceUrl() is obsolete, use the Url() method instead")]
-		public static string NiceUrl(this IPublishedContent content)
-		{
-			return content.Url();
-		}
-
-		/// <summary>
-		/// Gets the url for the content.
-		/// </summary>
-		/// <param name="content">The content.</param>
-		/// <returns>The url for the content.</returns>
-		/// <remarks>Better use the <c>Url</c> property but that method is here to complement <c>UrlAbsolute()</c>.</remarks>
-		public static string Url(this IPublishedContent content)
-		{
-		    return content.Url;
-		}
-
-		/// <summary>
-		/// Gets the absolute url for the content.
-		/// </summary>
+        /// Gets the url for the content.
+        /// </summary>
         /// <param name="content">The content.</param>
-		/// <returns>The absolute url for the content.</returns>
-		[Obsolete("NiceUrlWithDomain() is obsolete, use the UrlAbsolute() method instead.")]
-		public static string NiceUrlWithDomain(this IPublishedContent content)
-		{
-            return content.UrlAbsolute();
-		}
-
-		/// <summary>
-		/// Gets the absolute url for the content.
-		/// </summary>
-		/// <param name="content">The content.</param>
-		/// <returns>The absolute url for the content.</returns>
-        //[Obsolete("UrlWithDomain() is obsolete, use the UrlAbsolute() method instead.")]
-        public static string UrlWithDomain(this IPublishedContent content)
-		{
-		    return content.UrlAbsolute();
-		}
+        /// <returns>The url for the content.</returns>
+        /// <remarks>Better use the <c>Url</c> property but that method is here to complement <c>UrlAbsolute()</c>.</remarks>
+        public static string Url(this IPublishedContent content)
+        {
+            return content.Url;
+        }
 
         /// <summary>
         /// Gets the absolute url for the content.
@@ -87,11 +48,11 @@ namespace Umbraco.Web
             switch (content.ItemType)
             {
                 case PublishedItemType.Content:
-                    if (UmbracoContext.Current == null)
-                        throw new InvalidOperationException("Cannot resolve a Url for a content item when UmbracoContext.Current is null.");
-                    if (UmbracoContext.Current.UrlProvider == null)
-                        throw new InvalidOperationException("Cannot resolve a Url for a content item when UmbracoContext.Current.UrlProvider is null.");
-                    return UmbracoContext.Current.UrlProvider.GetUrl(content.Id, true);
+                    if (Current.UmbracoContext == null)
+                        throw new InvalidOperationException("Cannot resolve a Url for a content item when Current.UmbracoContext is null.");
+                    if (Current.UmbracoContext.UrlProvider == null)
+                        throw new InvalidOperationException("Cannot resolve a Url for a content item when Current.UmbracoContext.UrlProvider is null.");
+                    return Current.UmbracoContext.UrlProvider.GetUrl(content.Id, true);
                 case PublishedItemType.Media:
                     throw new NotSupportedException("AbsoluteUrl is not supported for media types.");
                 default:
@@ -99,20 +60,50 @@ namespace Umbraco.Web
             }
         }
 
-        #endregion
-
-        #region Template
-
         /// <summary>
-		/// Returns the current template Alias
-		/// </summary>
-		/// <param name="content"></param>
-		/// <returns></returns>
-		public static string GetTemplateAlias(this IPublishedContent content)
+        /// Gets the Url segment.
+        /// </summary>
+        /// <remarks>
+        /// <para>Gets the url segment for the document, taking its content type and a specified
+        /// culture in account. For invariant content types, the culture is ignored, else it is
+        /// used to try and find the segment corresponding to the culture. May return null.</para>
+        /// </remarks>
+        public static string GetUrlSegment(this IPublishedContent content, string culture = null)
         {
-            var template = ApplicationContext.Current.Services.FileService.GetTemplate(content.TemplateId);
-			return template == null ? string.Empty : template.Alias;
+            // for invariant content, return the invariant url segment
+            if (!content.ContentType.VariesByCulture())
+                return content.UrlSegment;
+
+            // content.GetCulture(culture) will use the 'current' culture (via accessor) in case 'culture'
+            // is null (meaning, 'current') - and can return 'null' if that culture is not published - and
+            // will return 'null' if the content is variant and culture is invariant
+
+            // else try and get the culture info
+            // return the corresponding url segment, or null if none
+            var cultureInfo = content.GetCulture(culture);
+            return cultureInfo?.UrlSegment;
 		}
+
+        public static bool IsAllowedTemplate(this IPublishedContent content, int templateId)
+        {
+            if (Current.Configs.Settings().WebRouting.DisableAlternativeTemplates)
+                return content.TemplateId == templateId;
+
+            if (content.TemplateId == templateId || !Current.Configs.Settings().WebRouting.ValidateAlternativeTemplates)
+                return true;
+
+            var publishedContentContentType = Current.Services.ContentTypeService.Get(content.ContentType.Id);
+            if (publishedContentContentType == null)
+                throw new NullReferenceException("No content type returned for published content (contentType='" + content.ContentType.Id + "')");
+
+            return publishedContentContentType.IsAllowedTemplate(templateId);
+
+        }
+        public static bool IsAllowedTemplate(this IPublishedContent content, string templateAlias)
+        {
+            var template = Current.Services.FileService.GetTemplate(templateAlias);
+            return template != null && content.IsAllowedTemplate(template.Id);
+        }
 
         #endregion
 
@@ -131,124 +122,48 @@ namespace Umbraco.Web
 
         #endregion
 
-        #region HasProperty
+        #region Template
 
         /// <summary>
-        /// Gets a value indicating whether the content has a property identified by its alias.
+        /// Returns the current template Alias
         /// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <returns>A value indicating whether the content has the property identified by the alias.</returns>
-        /// <remarks>The content may have a property, and that property may not have a value.</remarks>
-        public static bool HasProperty(this IPublishedContent content, string alias)
+        /// <param name="content"></param>
+        /// <returns>Empty string if none is set.</returns>
+        public static string GetTemplateAlias(this IPublishedContent content)
         {
-            return content.ContentType.GetPropertyType(alias) != null;
+            if(content.TemplateId.HasValue == false)
+            {
+                return string.Empty;
+            }
+
+            var template = Current.Services.FileService.GetTemplate(content.TemplateId.Value);
+            return template == null ? string.Empty : template.Alias;
         }
 
         #endregion
 
-        #region HasValue
+        #region HasValue, Value, Value<T>
 
         /// <summary>
         /// Gets a value indicating whether the content has a value for a property identified by its alias.
         /// </summary>
         /// <param name="content">The content.</param>
         /// <param name="alias">The property alias.</param>
+        /// <param name="culture">The variation language.</param>
+        /// <param name="segment">The variation segment.</param>
+        /// <param name="fallback">Optional fallback strategy.</param>
         /// <returns>A value indicating whether the content has a value for the property identified by the alias.</returns>
-        /// <remarks>Returns true if <c>GetProperty(alias)</c> is not <c>null</c> and <c>GetProperty(alias).HasValue</c> is <c>true</c>.</remarks>
-        public static bool HasValue(this IPublishedContent content, string alias)
-        {
-            return content.HasValue(alias, false);
-        }
-
-        /// <summary>
-        /// Gets a value indicating whether the content has a value for a property identified by its alias.
-        /// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <param name="recurse">A value indicating whether to navigate the tree upwards until a property with a value is found.</param>
-        /// <returns>A value indicating whether the content has a value for the property identified by the alias.</returns>
-        /// <remarks>Returns true if <c>GetProperty(alias, recurse)</c> is not <c>null</c> and <c>GetProperty(alias, recurse).HasValue</c> is <c>true</c>.</remarks>
-        public static bool HasValue(this IPublishedContent content, string alias, bool recurse)
-        {
-            var prop = content.GetProperty(alias, recurse);
-            return prop != null && prop.HasValue;
-        }
-
-        /// <summary>
-        /// Returns one of two strings depending on whether the content has a value for a property identified by its alias.
-        /// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <param name="valueIfTrue">The value to return if the content has a value for the property.</param>
-        /// <param name="valueIfFalse">The value to return if the content has no value for the property.</param>
-        /// <returns>Either <paramref name="valueIfTrue"/> or <paramref name="valueIfFalse"/> depending on whether the content
-        /// has a value for the property identified by the alias.</returns>
-        public static IHtmlString HasValue(this IPublishedContent content, string alias,
-            string valueIfTrue, string valueIfFalse = null)
-        {
-            return content.HasValue(alias, false)
-                ? new HtmlString(valueIfTrue)
-                : new HtmlString(valueIfFalse ?? string.Empty);
-        }
-
-        /// <summary>
-        /// Returns one of two strings depending on whether the content has a value for a property identified by its alias.
-        /// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <param name="recurse">A value indicating whether to navigate the tree upwards until a property with a value is found.</param>
-        /// <param name="valueIfTrue">The value to return if the content has a value for the property.</param>
-        /// <param name="valueIfFalse">The value to return if the content has no value for the property.</param>
-        /// <returns>Either <paramref name="valueIfTrue"/> or <paramref name="valueIfFalse"/> depending on whether the content
-        /// has a value for the property identified by the alias.</returns>
-        public static IHtmlString HasValue(this IPublishedContent content, string alias, bool recurse,
-            string valueIfTrue, string valueIfFalse = null)
-        {
-            return content.HasValue(alias, recurse)
-                ? new HtmlString(valueIfTrue)
-                : new HtmlString(valueIfFalse ?? string.Empty);
-        }
-
-        #endregion
-
-        #region GetPropertyValue
-
-        /// <summary>
-        /// Gets the value of a content's property identified by its alias.
-        /// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <returns>The value of the content's property identified by the alias.</returns>
-        /// <remarks>
-        /// <para>The value comes from <c>IPublishedProperty</c> field <c>Value</c> ie it is suitable for use when rendering content.</para>
-        /// <para>If no property with the specified alias exists, or if the property has no value, returns <c>null</c>.</para>
-        /// <para>If eg a numeric property wants to default to 0 when value source is empty, this has to be done in the converter.</para>
-        /// <para>The alias is case-insensitive.</para>
-        /// </remarks>
-        public static object GetPropertyValue(this IPublishedContent content, string alias)
+        /// <remarks>Returns true if HasValue is true, or a fallback strategy can provide a value.</remarks>
+        public static bool HasValue(this IPublishedContent content, string alias, string culture = null, string segment = null, Fallback fallback = default)
         {
             var property = content.GetProperty(alias);
-            return property == null ? null : property.Value;
-		}
 
-        /// <summary>
-        /// Gets the value of a content's property identified by its alias, if it exists, otherwise a default value.
-        /// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <param name="defaultValue">The default value.</param>
-        /// <returns>The value of the content's property identified by the alias, if it exists, otherwise a default value.</returns>
-        /// <remarks>
-        /// <para>The value comes from <c>IPublishedProperty</c> field <c>Value</c> ie it is suitable for use when rendering content.</para>
-        /// <para>If no property with the specified alias exists, or if the property has no value, returns <paramref name="defaultValue"/>.</para>
-        /// <para>If eg a numeric property wants to default to 0 when value source is empty, this has to be done in the converter.</para>
-        /// <para>The alias is case-insensitive.</para>
-        /// </remarks>
-        public static object GetPropertyValue(this IPublishedContent content, string alias, string defaultValue)
-        {
-            var property = content.GetProperty(alias);
-            return property == null || property.HasValue == false ? defaultValue : property.Value;
+            // if we have a property, and it has a value, return that value
+            if (property != null && property.HasValue(culture, segment))
+                return true;
+
+            // else let fallback try to get a value
+            return PublishedValueFallback.TryGetValue(content, alias, culture, segment, fallback, null, out _, out _);
         }
 
         /// <summary>
@@ -256,352 +171,132 @@ namespace Umbraco.Web
         /// </summary>
         /// <param name="content">The content.</param>
         /// <param name="alias">The property alias.</param>
+        /// <param name="culture">The variation language.</param>
+        /// <param name="segment">The variation segment.</param>
+        /// <param name="fallback">Optional fallback strategy.</param>
         /// <param name="defaultValue">The default value.</param>
         /// <returns>The value of the content's property identified by the alias, if it exists, otherwise a default value.</returns>
-        /// <remarks>
-        /// <para>The value comes from <c>IPublishedProperty</c> field <c>Value</c> ie it is suitable for use when rendering content.</para>
-        /// <para>If no property with the specified alias exists, or if the property has no value, returns <paramref name="defaultValue"/>.</para>
-        /// <para>If eg a numeric property wants to default to 0 when value source is empty, this has to be done in the converter.</para>
-        /// <para>The alias is case-insensitive.</para>
-        /// </remarks>
-        public static object GetPropertyValue(this IPublishedContent content, string alias, object defaultValue)
+        public static object Value(this IPublishedContent content, string alias, string culture = null, string segment = null, Fallback fallback = default, object defaultValue = default)
         {
             var property = content.GetProperty(alias);
-            return property == null || property.HasValue == false ? defaultValue : property.Value;
+
+            // if we have a property, and it has a value, return that value
+            if (property != null && property.HasValue(culture, segment))
+                return property.GetValue(culture, segment);
+
+            // else let fallback try to get a value
+            if (PublishedValueFallback.TryGetValue(content, alias, culture, segment, fallback, defaultValue, out var value, out property))
+                return value;
+
+            // else... if we have a property, at least let the converter return its own
+            // vision of 'no value' (could be an empty enumerable)
+            return property?.GetValue(culture, segment);
         }
-
-        /// <summary>
-        /// Recursively gets the value of a content's property identified by its alias.
-        /// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <param name="recurse">A value indicating whether to recurse.</param>
-        /// <returns>The recursive value of the content's property identified by the alias.</returns>
-        /// <remarks>
-        /// <para>Recursively means: walking up the tree from <paramref name="content"/>, get the first value that can be found.</para>
-        /// <para>The value comes from <c>IPublishedProperty</c> field <c>Value</c> ie it is suitable for use when rendering content.</para>
-        /// <para>If no property with the specified alias exists, or if the property has no value, returns <c>null</c>.</para>
-        /// <para>If eg a numeric property wants to default to 0 when value source is empty, this has to be done in the converter.</para>
-        /// <para>The alias is case-insensitive.</para>
-        /// </remarks>
-        public static object GetPropertyValue(this IPublishedContent content, string alias, bool recurse)
-        {
-            var property = content.GetProperty(alias, recurse);
-            return property == null ? null : property.Value;
-        }
-
-        /// <summary>
-        /// Recursively the value of a content's property identified by its alias, if it exists, otherwise a default value.
-        /// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <param name="recurse">A value indicating whether to recurse.</param>
-        /// <param name="defaultValue">The default value.</param>
-        /// <returns>The value of the content's property identified by the alias, if it exists, otherwise a default value.</returns>
-        /// <remarks>
-        /// <para>Recursively means: walking up the tree from <paramref name="content"/>, get the first value that can be found.</para>
-        /// <para>The value comes from <c>IPublishedProperty</c> field <c>Value</c> ie it is suitable for use when rendering content.</para>
-        /// <para>If no property with the specified alias exists, or if the property has no value, returns <paramref name="defaultValue"/>.</para>
-        /// <para>If eg a numeric property wants to default to 0 when value source is empty, this has to be done in the converter.</para>
-        /// <para>The alias is case-insensitive.</para>
-        /// </remarks>
-        public static object GetPropertyValue(this IPublishedContent content, string alias, bool recurse, object defaultValue)
-        {
-            var property = content.GetProperty(alias, recurse);
-            return property == null || property.HasValue == false ? defaultValue : property.Value;
-        }
-
-        #endregion
-
-        #region GetPropertyValue<T>
 
         /// <summary>
         /// Gets the value of a content's property identified by its alias, converted to a specified type.
-		/// </summary>
-		/// <typeparam name="T">The target property type.</typeparam>
-		/// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <returns>The value of the content's property identified by the alias, converted to the specified type.</returns>
-        /// <remarks>
-        /// <para>The value comes from <c>IPublishedProperty</c> field <c>Value</c> ie it is suitable for use when rendering content.</para>
-        /// <para>If no property with the specified alias exists, or if the property has no value, or if it could not be converted, returns <c>default(T)</c>.</para>
-        /// <para>If eg a numeric property wants to default to 0 when value source is empty, this has to be done in the converter.</para>
-        /// <para>The alias is case-insensitive.</para>
-        /// </remarks>
-        public static T GetPropertyValue<T>(this IPublishedContent content, string alias)
-		{
-			return content.GetPropertyValue(alias, false, false, default(T));
-		}
-
-        /// <summary>
-        /// Gets the value of a content's property identified by its alias, converted to a specified type, if it exists, otherwise a default value.
         /// </summary>
         /// <typeparam name="T">The target property type.</typeparam>
         /// <param name="content">The content.</param>
         /// <param name="alias">The property alias.</param>
+        /// <param name="culture">The variation language.</param>
+        /// <param name="segment">The variation segment.</param>
+        /// <param name="fallback">Optional fallback strategy.</param>
         /// <param name="defaultValue">The default value.</param>
-        /// <returns>The value of the content's property identified by the alias, converted to the specified type, if it exists, otherwise a default value.</returns>
-        /// <remarks>
-        /// <para>The value comes from <c>IPublishedProperty</c> field <c>Value</c> ie it is suitable for use when rendering content.</para>
-        /// <para>If no property with the specified alias exists, or if the property has no value, or if it could not be converted, returns <paramref name="defaultValue"/>.</para>
-        /// <para>If eg a numeric property wants to default to 0 when value source is empty, this has to be done in the converter.</para>
-        /// <para>The alias is case-insensitive.</para>
-        /// </remarks>
-        public static T GetPropertyValue<T>(this IPublishedContent content, string alias, T defaultValue)
-        {
-            return content.GetPropertyValue(alias, false, true, defaultValue);
-        }
-
-        /// <summary>
-        /// Recursively gets the value of a content's property identified by its alias, converted to a specified type.
-        /// </summary>
-        /// <typeparam name="T">The target property type.</typeparam>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <param name="recurse">A value indicating whether to recurse.</param>
         /// <returns>The value of the content's property identified by the alias, converted to the specified type.</returns>
-        /// <remarks>
-        /// <para>Recursively means: walking up the tree from <paramref name="content"/>, get the first value that can be found.</para>
-        /// <para>The value comes from <c>IPublishedProperty</c> field <c>Value</c> ie it is suitable for use when rendering content.</para>
-        /// <para>If no property with the specified alias exists, or if the property has no value, or if it could not be converted, returns <c>default(T)</c>.</para>
-        /// <para>If eg a numeric property wants to default to 0 when value source is empty, this has to be done in the converter.</para>
-        /// <para>The alias is case-insensitive.</para>
-        /// </remarks>
-        public static T GetPropertyValue<T>(this IPublishedContent content, string alias, bool recurse)
+        public static T Value<T>(this IPublishedContent content, string alias, string culture = null, string segment = null, Fallback fallback = default, T defaultValue = default)
         {
-            return content.GetPropertyValue(alias, recurse, false, default(T));
+            var property = content.GetProperty(alias);
+
+            // if we have a property, and it has a value, return that value
+            if (property != null && property.HasValue(culture, segment))
+                return property.Value<T>(culture, segment);
+
+            // else let fallback try to get a value
+            if (PublishedValueFallback.TryGetValue(content, alias, culture, segment, fallback, defaultValue, out var value, out property))
+                return value;
+
+            // else... if we have a property, at least let the converter return its own
+            // vision of 'no value' (could be an empty enumerable) - otherwise, default
+            return property == null ? default : property.Value<T>(culture, segment);
         }
+
+        #endregion
+
+        #region Variations
 
         /// <summary>
-        /// Recursively gets the value of a content's property identified by its alias, converted to a specified type, if it exists, otherwise a default value.
+        /// Determines whether the content has a culture.
         /// </summary>
-        /// <typeparam name="T">The target property type.</typeparam>
-        /// <param name="content">The content.</param>
-        /// <param name="alias">The property alias.</param>
-        /// <param name="recurse">A value indicating whether to recurse.</param>
-        /// <param name="defaultValue">The default value.</param>
-        /// <returns>The value of the content's property identified by the alias, converted to the specified type, if it exists, otherwise a default value.</returns>
-        /// <remarks>
-        /// <para>Recursively means: walking up the tree from <paramref name="content"/>, get the first value that can be found.</para>
-        /// <para>The value comes from <c>IPublishedProperty</c> field <c>Value</c> ie it is suitable for use when rendering content.</para>
-        /// <para>If no property with the specified alias exists, or if the property has no value, or if it could not be converted, returns <paramref name="defaultValue"/>.</para>
-        /// <para>If eg a numeric property wants to default to 0 when value source is empty, this has to be done in the converter.</para>
-        /// <para>The alias is case-insensitive.</para>
-        /// </remarks>
-        public static T GetPropertyValue<T>(this IPublishedContent content, string alias, bool recurse, T defaultValue)
-        {
-            return content.GetPropertyValue(alias, recurse, true, defaultValue);
-        }
-
-        internal static T GetPropertyValue<T>(this IPublishedContent content, string alias, bool recurse, bool withDefaultValue, T defaultValue)
-        {
-            var property = content.GetProperty(alias, recurse);
-            if (property == null) return defaultValue;
-
-            return property.GetValue(withDefaultValue, defaultValue);
-		}
-
-		#endregion
-
-        // copied over from Core.PublishedContentExtensions - should be obsoleted
-        [Obsolete("GetRecursiveValue() is obsolete, use GetPropertyValue().")]
-        public static string GetRecursiveValue(this IPublishedContent content, string alias)
-        {
-            var value = content.GetPropertyValue(alias, true);
-            return value == null ? string.Empty : value.ToString();
-        }
-
-		#region Search
-
-        public static IEnumerable<IPublishedContent> Search(this IPublishedContent content, string term, bool useWildCards = true, string searchProvider = null)
-		{
-			var searcher = Examine.ExamineManager.Instance.DefaultSearchProvider;
-			if (string.IsNullOrEmpty(searchProvider) == false)
-				searcher = Examine.ExamineManager.Instance.SearchProviderCollection[searchProvider];
-
-			var t = term.Escape().Value;
-			if (useWildCards)
-				t = term.MultipleCharacterWildcard().Value;
-
-			var luceneQuery = "+__Path:(" + content.Path.Replace("-", "\\-") + "*) +" + t;
-			var crit = searcher.CreateSearchCriteria().RawQuery(luceneQuery);
-
-			return content.Search(crit, searcher);
-		}
-
-        public static IEnumerable<IPublishedContent> SearchDescendants(this IPublishedContent content, string term, bool useWildCards = true, string searchProvider = null)
-		{
-			return content.Search(term, useWildCards, searchProvider);
-		}
-
-        public static IEnumerable<IPublishedContent> SearchChildren(this IPublishedContent content, string term, bool useWildCards = true, string searchProvider = null)
-		{
-			var searcher = Examine.ExamineManager.Instance.DefaultSearchProvider;
-			if (string.IsNullOrEmpty(searchProvider) == false)
-				searcher = Examine.ExamineManager.Instance.SearchProviderCollection[searchProvider];
-
-			var t = term.Escape().Value;
-			if (useWildCards)
-				t = term.MultipleCharacterWildcard().Value;
-
-			var luceneQuery = "+parentID:" + content.Id + " +" + t;
-			var crit = searcher.CreateSearchCriteria().RawQuery(luceneQuery);
-
-			return content.Search(crit, searcher);
-		}
-
-        public static IEnumerable<IPublishedContent> Search(this IPublishedContent content, Examine.SearchCriteria.ISearchCriteria criteria, Examine.Providers.BaseSearchProvider searchProvider = null)
-		{
-			var s = Examine.ExamineManager.Instance.DefaultSearchProvider;
-			if (searchProvider != null)
-				s = searchProvider;
-
-			var results = s.Search(criteria);
-			return results.ConvertSearchResultToPublishedContent(UmbracoContext.Current.ContentCache);
-		}
-
-		#endregion
-
-        #region ToContentSet
+        /// <remarks>Culture is case-insensitive.</remarks>
+        public static bool HasCulture(this IPublishedContent content, string culture)
+            => content.Cultures.ContainsKey(culture ?? string.Empty);
 
         /// <summary>
-        /// Returns the content enumerable as a content set.
+        /// Filters a sequence of <see cref="IPublishedContent"/> to return invariant items, and items that are published for the specified culture.
         /// </summary>
-        /// <param name="source">The content enumerable.</param>
-        /// <returns>A content set wrapping the content enumerable.</returns>
-        public static PublishedContentSet<T> ToContentSet<T>(this IEnumerable<T> source)
+        /// <param name="contents">The content items.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null).</param>
+        internal static IEnumerable<T> WhereIsInvariantOrHasCulture<T>(this IEnumerable<T> contents, string culture = null)
             where T : class, IPublishedContent
         {
-            return new PublishedContentSet<T>(source);
-        }
+            if (contents == null) throw new ArgumentNullException(nameof(contents));
 
-        /// <summary>
-        /// Returns the ordered content enumerable as an ordered content set.
-        /// </summary>
-        /// <param name="source">The ordered content enumerable.</param>
-        /// <returns>A ordered content set wrapping the ordered content enumerable.</returns>
-        public static PublishedContentOrderedSet<T> ToContentSet<T>(this IOrderedEnumerable<T> source)
-            where T : class, IPublishedContent
-        {
-            return new PublishedContentOrderedSet<T>(source);
+            culture = culture ?? Current.VariationContextAccessor.VariationContext?.Culture ?? "";
+
+            // either does not vary by culture, or has the specified culture
+            return contents.Where(x => !x.ContentType.VariesByCulture() || x.HasCulture(culture));
         }
 
         #endregion
 
-        #region Dynamic Linq Extensions
+        #region Search
 
-        // todo - we should keep this file clean and remove dynamic linq stuff from it
-
-        public static IQueryable<IPublishedContent> OrderBy(this IEnumerable<IPublishedContent> source, string predicate)
-		{
-			var dList = new DynamicPublishedContentList(source);
-			return dList.OrderBy<DynamicPublishedContent>(predicate);
-		}
-
-		public static IQueryable<IPublishedContent> Where(this IEnumerable<IPublishedContent> list, string predicate)
-		{
-            // wrap in DynamicPublishedContentList so that the ContentSet is correct
-            // though that code is somewhat ugly.
-
-		    var dlist = new DynamicPublishedContentList(new DynamicPublishedContentList(list)
-		                                                    .Where<DynamicPublishedContent>(predicate));
-
-		    return dlist.AsQueryable<IPublishedContent>();
-		}
-
-		public static IEnumerable<IGrouping<object, IPublishedContent>> GroupBy(this IEnumerable<IPublishedContent> list, string predicate)
-		{
-			var dList = new DynamicPublishedContentList(list);
-			return dList.GroupBy(predicate);
-		}
-
-		public static IQueryable Select(this IEnumerable<IPublishedContent> list, string predicate, params object[] values)
-		{
-			var dList = new DynamicPublishedContentList(list);
-			return dList.Select(predicate);
-		}
-
-        public static HtmlString Where(this IPublishedContent content, string predicate, string valueIfTrue)
+        public static IEnumerable<PublishedSearchResult> SearchDescendants(this IPublishedContent content, string term, string indexName = null)
         {
-            if (content == null) throw new ArgumentNullException("content");
-            return content.Where(predicate, valueIfTrue, string.Empty);
+            // TODO: inject examine manager
+
+            indexName = string.IsNullOrEmpty(indexName) ? Constants.UmbracoIndexes.ExternalIndexName : indexName;
+            if (!ExamineManager.Instance.TryGetIndex(indexName, out var index))
+                throw new InvalidOperationException("No index found with name " + indexName);
+
+            var searcher = index.GetSearcher();
+
+            //var t = term.Escape().Value;
+            //var luceneQuery = "+__Path:(" + content.Path.Replace("-", "\\-") + "*) +" + t;
+
+            var query = searcher.CreateQuery()
+                .Field(UmbracoExamineIndex.IndexPathFieldName, (content.Path + ",").MultipleCharacterWildcard())
+                .And()
+                .ManagedQuery(term);
+
+            return query.Execute().ToPublishedSearchResults(Current.UmbracoContext.ContentCache);
         }
 
-        public static HtmlString Where(this IPublishedContent content, string predicate, string valueIfTrue, string valueIfFalse)
+        public static IEnumerable<PublishedSearchResult> SearchChildren(this IPublishedContent content, string term, string indexName = null)
         {
-            if (content == null) throw new ArgumentNullException("content");
-            return new HtmlString(content.Where(predicate) ? valueIfTrue : valueIfFalse);
+            // TODO: inject examine manager
+
+            indexName = string.IsNullOrEmpty(indexName) ? Constants.UmbracoIndexes.ExternalIndexName : indexName;
+            if (!ExamineManager.Instance.TryGetIndex(indexName, out var index))
+                throw new InvalidOperationException("No index found with name " + indexName);
+
+            var searcher = index.GetSearcher();
+
+            //var t = term.Escape().Value;
+            //var luceneQuery = "+parentID:" + content.Id + " +" + t;
+
+            var query = searcher.CreateQuery()
+                .Field("parentID", content.Id)
+                .And()
+                .ManagedQuery(term);
+
+            return query.Execute().ToPublishedSearchResults(Current.UmbracoContext.ContentCache);
         }
-
-        public static bool Where(this IPublishedContent content, string predicate)
-        {
-            if (content == null) throw new ArgumentNullException("content");
-            var dynamicDocumentList = new DynamicPublishedContentList { content.AsDynamicOrNull() };
-            var filtered = dynamicDocumentList.Where<DynamicPublishedContent>(predicate);
-            return filtered.Count() == 1;
-        }
-        
-        #endregion
-
-        #region AsDynamic
-
-        // it is ok to have dynamic here
-
-        // content should NOT be null
-		public static dynamic AsDynamic(this IPublishedContent content)
-		{
-			if (content == null) throw new ArgumentNullException("content");
-			return new DynamicPublishedContent(content);
-		}
-
-        // content CAN be null
-        internal static DynamicPublishedContent AsDynamicOrNull(this IPublishedContent content)
-		{
-		    return content == null ? null : new DynamicPublishedContent(content);
-		}
 
         #endregion
 
-		#region ContentSet
-
-		public static int Position(this IPublishedContent content)
-		{
-			return content.GetIndex();
-		}
-
-        public static int Index(this IPublishedContent content)
-        {
-            return content.GetIndex();
-        }
-
-        private static int GetIndex(this IPublishedContent content, IEnumerable<IPublishedContent> set)
-        {
-            var index = set.FindIndex(n => n.Id == content.Id);
-            if (index < 0)
-                throw new IndexOutOfRangeException("Could not find content in the content set.");
-            return index;
-        }
-
-		#endregion
-
-		#region IsSomething: misc.
-
-        /// <summary>
-        /// Gets a value indicating whether the content is visible.
-        /// </summary>
-        /// <param name="content">The content.</param>
-        /// <returns>A value indicating whether the content is visible.</returns>
-        /// <remarks>A content is not visible if it has an umbracoNaviHide property with a value of "1". Otherwise,
-        /// the content is visible.</remarks>
-        public static bool IsVisible(this IPublishedContent content)
-        {
-            // note: would be better to ensure we have an IPropertyEditorValueConverter for booleans
-            // and then treat the umbracoNaviHide property as a boolean - vs. the hard-coded "1".
-
-            // rely on the property converter - will return default bool value, ie false, if property
-            // is not defined, or has no value, else will return its value.
-            return content.GetPropertyValue<bool>(Constants.Conventions.Content.NaviHide) == false;
-        }
+        #region IsSomething: misc.
 
         /// <summary>
         /// Determines whether the specified content is a specified content type.
@@ -609,238 +304,59 @@ namespace Umbraco.Web
         /// <param name="content">The content to determine content type of.</param>
         /// <param name="docTypeAlias">The alias of the content type to test against.</param>
         /// <returns>True if the content is of the specified content type; otherwise false.</returns>
-	    public static bool IsDocumentType(this IPublishedContent content, string docTypeAlias)
-	    {
-	        return content.DocumentTypeAlias.InvariantEquals(docTypeAlias);
-	    }
-
-	    /// <summary>
-	    /// Determines whether the specified content is a specified content type or it's derived types.
-	    /// </summary>
-	    /// <param name="content">The content to determine content type of.</param>
-	    /// <param name="docTypeAlias">The alias of the content type to test against.</param>
-	    /// <param name="recursive">When true, recurses up the content type tree to check inheritance; when false just calls IsDocumentType(this IPublishedContent content, string docTypeAlias).</param>
-	    /// <returns>True if the content is of the specified content type or a derived content type; otherwise false.</returns>
-	    public static bool IsDocumentType(this IPublishedContent content, string docTypeAlias, bool recursive)
-		{
-			if (content.IsDocumentType(docTypeAlias))
-				return true;
-
-			if (recursive)
-				return IsDocumentTypeRecursive(content, docTypeAlias);
-			return false;
-		}
-
-		private static bool IsDocumentTypeRecursive(IPublishedContent content, string docTypeAlias)
-		{
-			var contentTypeService = UmbracoContext.Current.Application.Services.ContentTypeService;
-			var type = contentTypeService.GetContentType(content.DocumentTypeAlias);
-			while (type != null && type.ParentId > 0)
-			{
-				type = contentTypeService.GetContentType(type.ParentId);
-				if (type.Alias.InvariantEquals(docTypeAlias))
-					return true;
-			}
-			return false;
-		}
-
-		public static bool IsNull(this IPublishedContent content, string alias, bool recurse)
-		{
-		    return content.HasValue(alias, recurse) == false;
-		}
-
-		public static bool IsNull(this IPublishedContent content, string alias)
-		{
-		    return content.HasValue(alias) == false;
-		}
-
-        #endregion
-
-        #region IsSomething: position in set
-
-        public static bool IsFirst(this IPublishedContent content)
+        public static bool IsDocumentType(this IPublishedContent content, string docTypeAlias)
         {
-            return content.GetIndex() == 0;
+            return content.ContentType.Alias.InvariantEquals(docTypeAlias);
         }
 
-        public static HtmlString IsFirst(this IPublishedContent content, string valueIfTrue)
+        /// <summary>
+        /// Determines whether the specified content is a specified content type or it's derived types.
+        /// </summary>
+        /// <param name="content">The content to determine content type of.</param>
+        /// <param name="docTypeAlias">The alias of the content type to test against.</param>
+        /// <param name="recursive">When true, recurses up the content type tree to check inheritance; when false just calls IsDocumentType(this IPublishedContent content, string docTypeAlias).</param>
+        /// <returns>True if the content is of the specified content type or a derived content type; otherwise false.</returns>
+        public static bool IsDocumentType(this IPublishedContent content, string docTypeAlias, bool recursive)
         {
-            return content.IsFirst(valueIfTrue, string.Empty);
-        }
+            if (content.IsDocumentType(docTypeAlias))
+                return true;
 
-        public static HtmlString IsFirst(this IPublishedContent content, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsFirst() ? valueIfTrue : valueIfFalse);
+            return recursive && content.IsComposedOf(docTypeAlias);
         }
-
-        public static bool IsNotFirst(this IPublishedContent content)
-        {
-            return content.IsFirst() == false;
-        }
-
-        public static HtmlString IsNotFirst(this IPublishedContent content, string valueIfTrue)
-        {
-            return content.IsNotFirst(valueIfTrue, string.Empty);
-        }
-
-        public static HtmlString IsNotFirst(this IPublishedContent content, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsNotFirst() ? valueIfTrue : valueIfFalse);
-        }
-
-        public static bool IsPosition(this IPublishedContent content, int index)
-        {
-            return content.GetIndex() == index;
-        }
-
-        public static HtmlString IsPosition(this IPublishedContent content, int index, string valueIfTrue)
-        {
-            return content.IsPosition(index, valueIfTrue, string.Empty);
-        }
-
-        public static HtmlString IsPosition(this IPublishedContent content, int index, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsPosition(index) ? valueIfTrue : valueIfFalse);
-        }
-
-        public static bool IsModZero(this IPublishedContent content, int modulus)
-        {
-            return content.GetIndex() % modulus == 0;
-        }
-
-        public static HtmlString IsModZero(this IPublishedContent content, int modulus, string valueIfTrue)
-        {
-            return content.IsModZero(modulus, valueIfTrue, string.Empty);
-        }
-
-        public static HtmlString IsModZero(this IPublishedContent content, int modulus, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsModZero(modulus) ? valueIfTrue : valueIfFalse);
-        }
-
-        public static bool IsNotModZero(this IPublishedContent content, int modulus)
-        {
-            return content.IsModZero(modulus) == false;
-        }
-
-        public static HtmlString IsNotModZero(this IPublishedContent content, int modulus, string valueIfTrue)
-        {
-            return content.IsNotModZero(modulus, valueIfTrue, string.Empty);
-        }
-
-        public static HtmlString IsNotModZero(this IPublishedContent content, int modulus, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsNotModZero(modulus) ? valueIfTrue : valueIfFalse);
-        }
-
-        public static bool IsNotPosition(this IPublishedContent content, int index)
-        {
-            return content.IsPosition(index) == false;
-        }
-
-        public static HtmlString IsNotPosition(this IPublishedContent content, int index, string valueIfTrue)
-        {
-            return content.IsNotPosition(index, valueIfTrue, string.Empty);
-        }
-
-        public static HtmlString IsNotPosition(this IPublishedContent content, int index, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsNotPosition(index) ? valueIfTrue : valueIfFalse);
-        }
-
-        public static bool IsLast(this IPublishedContent content)
-        {
-            return content.GetIndex() == content.ContentSet.Count() - 1;
-        }
-
-        public static HtmlString IsLast(this IPublishedContent content, string valueIfTrue)
-        {
-            return content.IsLast(valueIfTrue, string.Empty);
-        }
-
-        public static HtmlString IsLast(this IPublishedContent content, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsLast() ? valueIfTrue : valueIfFalse);
-        }
-
-        public static bool IsNotLast(this IPublishedContent content)
-        {
-            return content.IsLast() == false;
-        }
-
-        public static HtmlString IsNotLast(this IPublishedContent content, string valueIfTrue)
-        {
-            return content.IsNotLast(valueIfTrue, string.Empty);
-        }
-
-        public static HtmlString IsNotLast(this IPublishedContent content, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsNotLast() ? valueIfTrue : valueIfFalse);
-        }
-
-        public static bool IsEven(this IPublishedContent content)
-        {
-            return content.GetIndex() % 2 == 0;
-        }
-
-        public static HtmlString IsEven(this IPublishedContent content, string valueIfTrue)
-        {
-            return content.IsEven(valueIfTrue, string.Empty);
-        }
-
-        public static HtmlString IsEven(this IPublishedContent content, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsEven() ? valueIfTrue : valueIfFalse);
-        }
-
-        public static bool IsOdd(this IPublishedContent content)
-        {
-            return content.GetIndex() % 2 == 1;
-        }
-
-        public static HtmlString IsOdd(this IPublishedContent content, string valueIfTrue)
-        {
-            return content.IsOdd(valueIfTrue, string.Empty);
-        }
-
-        public static HtmlString IsOdd(this IPublishedContent content, string valueIfTrue, string valueIfFalse)
-        {
-            return new HtmlString(content.IsOdd() ? valueIfTrue : valueIfFalse);
-        } 
 
         #endregion
 
         #region IsSomething: equality
 
         public static bool IsEqual(this IPublishedContent content, IPublishedContent other)
-		{
-			return content.Id == other.Id;
-		}
+        {
+            return content.Id == other.Id;
+        }
 
         public static HtmlString IsEqual(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
         {
             return content.IsEqual(other, valueIfTrue, string.Empty);
         }
 
-		public static HtmlString IsEqual(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
-		{
-			return new HtmlString(content.IsEqual(other) ? valueIfTrue : valueIfFalse);
-		}
+        public static HtmlString IsEqual(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
+        {
+            return new HtmlString(content.IsEqual(other) ? valueIfTrue : valueIfFalse);
+        }
 
-		public static bool IsNotEqual(this IPublishedContent content, IPublishedContent other)
-		{
-		    return content.IsEqual(other) == false;
-		}
+        public static bool IsNotEqual(this IPublishedContent content, IPublishedContent other)
+        {
+            return content.IsEqual(other) == false;
+        }
 
         public static HtmlString IsNotEqual(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
         {
             return content.IsNotEqual(other, valueIfTrue, string.Empty);
         }
-        
+
         public static HtmlString IsNotEqual(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
-		{
-			return new HtmlString(content.IsNotEqual(other) ? valueIfTrue : valueIfFalse);
-		}
+        {
+            return new HtmlString(content.IsNotEqual(other) ? valueIfTrue : valueIfFalse);
+        }
 
         #endregion
 
@@ -848,63 +364,61 @@ namespace Umbraco.Web
 
         public static bool IsDescendant(this IPublishedContent content, IPublishedContent other)
         {
-            return content.Ancestors().Any(x => x.Id == other.Id);
-		}
-
-		public static HtmlString IsDescendant(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
-		{
-		    return content.IsDescendant(other, valueIfTrue, string.Empty);
-		}
-
-		public static HtmlString IsDescendant(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
-		{
-            return new HtmlString(content.IsDescendant(other) ? valueIfTrue : valueIfFalse);
-		}
-
-		public static bool IsDescendantOrSelf(this IPublishedContent content, IPublishedContent other)
-		{
-            return content.AncestorsOrSelf().Any(x => x.Id == other.Id);
+            return other.Level < content.Level && content.Path.InvariantStartsWith(other.Path.EnsureEndsWith(','));
         }
 
-		public static HtmlString IsDescendantOrSelf(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
-		{
+        public static HtmlString IsDescendant(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
+        {
+            return content.IsDescendant(other, valueIfTrue, string.Empty);
+        }
+
+        public static HtmlString IsDescendant(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
+        {
+            return new HtmlString(content.IsDescendant(other) ? valueIfTrue : valueIfFalse);
+        }
+
+        public static bool IsDescendantOrSelf(this IPublishedContent content, IPublishedContent other)
+        {
+            return content.Path.InvariantEquals(other.Path) || content.IsDescendant(other);
+        }
+
+        public static HtmlString IsDescendantOrSelf(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
+        {
             return content.IsDescendantOrSelf(other, valueIfTrue, string.Empty);
         }
 
-		public static HtmlString IsDescendantOrSelf(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
-		{
+        public static HtmlString IsDescendantOrSelf(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
+        {
             return new HtmlString(content.IsDescendantOrSelf(other) ? valueIfTrue : valueIfFalse);
         }
 
-		public static bool IsAncestor(this IPublishedContent content, IPublishedContent other)
-		{
-            // avoid using Descendants(), that's expensive
-		    return other.Ancestors().Any(x => x.Id == content.Id);
-		}
+        public static bool IsAncestor(this IPublishedContent content, IPublishedContent other)
+        {
+            return content.Level < other.Level && other.Path.InvariantStartsWith(content.Path.EnsureEndsWith(','));
+        }
 
-		public static HtmlString IsAncestor(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
-		{
+        public static HtmlString IsAncestor(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
+        {
             return content.IsAncestor(other, valueIfTrue, string.Empty);
         }
 
-		public static HtmlString IsAncestor(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
-		{
+        public static HtmlString IsAncestor(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
+        {
             return new HtmlString(content.IsAncestor(other) ? valueIfTrue : valueIfFalse);
         }
 
-		public static bool IsAncestorOrSelf(this IPublishedContent content, IPublishedContent other)
-		{
-            // avoid using DescendantsOrSelf(), that's expensive
-            return other.AncestorsOrSelf().Any(x => x.Id == content.Id);
+        public static bool IsAncestorOrSelf(this IPublishedContent content, IPublishedContent other)
+        {
+            return other.Path.InvariantEquals(content.Path) || content.IsAncestor(other);
         }
 
-		public static HtmlString IsAncestorOrSelf(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
-		{
+        public static HtmlString IsAncestorOrSelf(this IPublishedContent content, IPublishedContent other, string valueIfTrue)
+        {
             return content.IsAncestorOrSelf(other, valueIfTrue, string.Empty);
         }
 
-		public static HtmlString IsAncestorOrSelf(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
-		{
+        public static HtmlString IsAncestorOrSelf(this IPublishedContent content, IPublishedContent other, string valueIfTrue, string valueIfFalse)
+        {
             return new HtmlString(content.IsAncestorOrSelf(other) ? valueIfTrue : valueIfFalse);
         }
 
@@ -912,14 +426,14 @@ namespace Umbraco.Web
 
         #region Axes: ancestors, ancestors-or-self
 
-        // as per XPath 1.0 specs §2.2,
+        // as per XPath 1.0 specs ï¿½2.2,
         // - the ancestor axis contains the ancestors of the context node; the ancestors of the context node consist
         //   of the parent of context node and the parent's parent and so on; thus, the ancestor axis will always
         //   include the root node, unless the context node is the root node.
         // - the ancestor-or-self axis contains the context node and the ancestors of the context node; thus,
         //   the ancestor axis will always include the root node.
         //
-        // as per XPath 2.0 specs §3.2.1.1,
+        // as per XPath 2.0 specs ï¿½3.2.1.1,
         // - the ancestor axis is defined as the transitive closure of the parent axis; it contains the ancestors
         //   of the context node (the parent, the parent of the parent, and so on) - The ancestor axis includes the
         //   root node of the tree in which the context node is found, unless the context node is the root node.
@@ -929,7 +443,7 @@ namespace Umbraco.Web
         // the ancestor and ancestor-or-self axis are reverse axes ie they contain the context node or nodes that
         // are before the context node in document order.
         //
-        // document order is defined by §2.4.1 as:
+        // document order is defined by ï¿½2.4.1 as:
         // - the root node is the first node.
         // - every node occurs before all of its children and descendants.
         // - the relative order of siblings is the order in which they occur in the children property of their parent node.
@@ -967,7 +481,7 @@ namespace Umbraco.Web
         /// <remarks>Does not consider the content itself. Returns all ancestors, of the specified content type.</remarks>
         public static IEnumerable<IPublishedContent> Ancestors(this IPublishedContent content, string contentTypeAlias)
         {
-            return content.AncestorsOrSelf(false, n => n.DocumentTypeAlias == contentTypeAlias);
+            return content.AncestorsOrSelf(false, n => n.ContentType.Alias == contentTypeAlias);
         }
 
         /// <summary>
@@ -1032,7 +546,7 @@ namespace Umbraco.Web
         /// <remarks>May or may not begin with the content itself, depending on its content type.</remarks>
         public static IEnumerable<IPublishedContent> AncestorsOrSelf(this IPublishedContent content, string contentTypeAlias)
         {
-            return content.AncestorsOrSelf(true, n => n.DocumentTypeAlias == contentTypeAlias);
+            return content.AncestorsOrSelf(true, n => n.ContentType.Alias == contentTypeAlias);
         }
 
         /// <summary>
@@ -1095,7 +609,7 @@ namespace Umbraco.Web
         /// <remarks>Does not consider the content itself. May return <c>null</c>.</remarks>
         public static IPublishedContent Ancestor(this IPublishedContent content, string contentTypeAlias)
         {
-            return content.EnumerateAncestors(false).FirstOrDefault(x => x.DocumentTypeAlias == contentTypeAlias);
+            return content.EnumerateAncestors(false).FirstOrDefault(x => x.ContentType.Alias == contentTypeAlias);
         }
 
         /// <summary>
@@ -1125,7 +639,7 @@ namespace Umbraco.Web
         {
             return content.Ancestors<T>(maxLevel).FirstOrDefault();
         }
-        
+
         /// <summary>
         /// Gets the content or its nearest ancestor.
         /// </summary>
@@ -1158,7 +672,7 @@ namespace Umbraco.Web
         /// <remarks>May or may not return the content itself depending on its content type. May return <c>null</c>.</remarks>
         public static IPublishedContent AncestorOrSelf(this IPublishedContent content, string contentTypeAlias)
         {
-            return content.EnumerateAncestors(true).FirstOrDefault(x => x.DocumentTypeAlias == contentTypeAlias);
+            return content.EnumerateAncestors(true).FirstOrDefault(x => x.ContentType.Alias == contentTypeAlias);
         }
 
         /// <summary>
@@ -1186,8 +700,8 @@ namespace Umbraco.Web
         {
             return content.AncestorsOrSelf<T>(maxLevel).FirstOrDefault();
         }
-        
-        internal static IEnumerable<IPublishedContent> AncestorsOrSelf(this IPublishedContent content, bool orSelf, Func<IPublishedContent, bool> func)
+
+        public static IEnumerable<IPublishedContent> AncestorsOrSelf(this IPublishedContent content, bool orSelf, Func<IPublishedContent, bool> func)
         {
             var ancestorsOrSelf = content.EnumerateAncestors(orSelf);
             return func == null ? ancestorsOrSelf : ancestorsOrSelf.Where(func);
@@ -1201,7 +715,7 @@ namespace Umbraco.Web
         /// <returns>Enumerates bottom-up ie walking up the tree (parent, grand-parent, etc).</returns>
         internal static IEnumerable<IPublishedContent> EnumerateAncestors(this IPublishedContent content, bool orSelf)
         {
-            if (content == null) throw new ArgumentNullException("content");
+            if (content == null) throw new ArgumentNullException(nameof(content));
             if (orSelf) yield return content;
             while ((content = content.Parent) != null)
                 yield return content;
@@ -1209,43 +723,45 @@ namespace Umbraco.Web
 
         #endregion
 
-		#region Axes: descendants, descendants-or-self
+        #region Axes: descendants, descendants-or-self
 
         /// <summary>
         /// Returns all DescendantsOrSelf of all content referenced
         /// </summary>
         /// <param name="parentNodes"></param>
         /// <param name="docTypeAlias"></param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
         /// <returns></returns>
         /// <remarks>
         /// This can be useful in order to return all nodes in an entire site by a type when combined with TypedContentAtRoot
         /// </remarks>
-        public static IEnumerable<IPublishedContent> DescendantsOrSelf(this IEnumerable<IPublishedContent> parentNodes, string docTypeAlias)
+        public static IEnumerable<IPublishedContent> DescendantsOrSelfOfType(this IEnumerable<IPublishedContent> parentNodes, string docTypeAlias, string culture = null)
         {
-            return parentNodes.SelectMany(x => x.DescendantsOrSelf(docTypeAlias));
+            return parentNodes.SelectMany(x => x.DescendantsOrSelfOfType(docTypeAlias, culture));
         }
 
         /// <summary>
         /// Returns all DescendantsOrSelf of all content referenced
         /// </summary>
         /// <param name="parentNodes"></param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
         /// <returns></returns>
         /// <remarks>
         /// This can be useful in order to return all nodes in an entire site by a type when combined with TypedContentAtRoot
         /// </remarks>
-        public static IEnumerable<T> DescendantsOrSelf<T>(this IEnumerable<IPublishedContent> parentNodes)
+        public static IEnumerable<T> DescendantsOrSelf<T>(this IEnumerable<IPublishedContent> parentNodes, string culture = null)
             where T : class, IPublishedContent
         {
-            return parentNodes.SelectMany(x => x.DescendantsOrSelf<T>());
-        } 
+            return parentNodes.SelectMany(x => x.DescendantsOrSelf<T>(culture));
+        }
 
 
-        // as per XPath 1.0 specs §2.2,
+        // as per XPath 1.0 specs ï¿½2.2,
         // - the descendant axis contains the descendants of the context node; a descendant is a child or a child of a child and so on; thus
         //   the descendant axis never contains attribute or namespace nodes.
         // - the descendant-or-self axis contains the context node and the descendants of the context node.
         //
-        // as per XPath 2.0 specs §3.2.1.1,
+        // as per XPath 2.0 specs ï¿½3.2.1.1,
         // - the descendant axis is defined as the transitive closure of the child axis; it contains the descendants of the context node (the
         //   children, the children of the children, and so on).
         // - the descendant-or-self axis contains the context node and the descendants of the context node.
@@ -1253,445 +769,140 @@ namespace Umbraco.Web
         // the descendant and descendant-or-self axis are forward axes ie they contain the context node or nodes that are after the context
         // node in document order.
         //
-        // document order is defined by §2.4.1 as:
+        // document order is defined by ï¿½2.4.1 as:
         // - the root node is the first node.
         // - every node occurs before all of its children and descendants.
         // - the relative order of siblings is the order in which they occur in the children property of their parent node.
         // - children and descendants occur before following siblings.
 
-        public static IEnumerable<IPublishedContent> Descendants(this IPublishedContent content)
+        public static IEnumerable<IPublishedContent> Descendants(this IPublishedContent content, string culture = null)
         {
-            return content.DescendantsOrSelf(false, null);
+            return content.DescendantsOrSelf(false, null, culture);
         }
 
-        public static IEnumerable<IPublishedContent> Descendants(this IPublishedContent content, int level)
+        public static IEnumerable<IPublishedContent> Descendants(this IPublishedContent content, int level, string culture = null)
         {
-            return content.DescendantsOrSelf(false, p => p.Level >= level);
+            return content.DescendantsOrSelf(false, p => p.Level >= level, culture);
         }
 
-        public static IEnumerable<IPublishedContent> Descendants(this IPublishedContent content, string contentTypeAlias)
-		{
-			return content.DescendantsOrSelf(false, p => p.DocumentTypeAlias == contentTypeAlias);
-		}
+        public static IEnumerable<IPublishedContent> DescendantsOfType(this IPublishedContent content, string contentTypeAlias, string culture = null)
+        {
+            return content.DescendantsOrSelf(false, p => p.ContentType.Alias == contentTypeAlias, culture);
+        }
 
-        public static IEnumerable<T> Descendants<T>(this IPublishedContent content)
+        public static IEnumerable<T> Descendants<T>(this IPublishedContent content, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.Descendants().OfType<T>();
+            return content.Descendants(culture).OfType<T>();
         }
 
-        public static IEnumerable<T> Descendants<T>(this IPublishedContent content, int level)
+        public static IEnumerable<T> Descendants<T>(this IPublishedContent content, int level, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.Descendants(level).OfType<T>();
+            return content.Descendants(level, culture).OfType<T>();
         }
-        
-        public static IEnumerable<IPublishedContent> DescendantsOrSelf(this IPublishedContent content)
+
+        public static IEnumerable<IPublishedContent> DescendantsOrSelf(this IPublishedContent content, string culture = null)
         {
-            return content.DescendantsOrSelf(true, null);
+            return content.DescendantsOrSelf(true, null, culture);
         }
 
-        public static IEnumerable<IPublishedContent> DescendantsOrSelf(this IPublishedContent content, int level)
-		{
-			return content.DescendantsOrSelf(true, p => p.Level >= level);
-		}
+        public static IEnumerable<IPublishedContent> DescendantsOrSelf(this IPublishedContent content, int level, string culture = null)
+        {
+            return content.DescendantsOrSelf(true, p => p.Level >= level, culture);
+        }
 
-        public static IEnumerable<IPublishedContent> DescendantsOrSelf(this IPublishedContent content, string contentTypeAlias)
-		{
-			return content.DescendantsOrSelf(true, p => p.DocumentTypeAlias == contentTypeAlias);
-		}
+        public static IEnumerable<IPublishedContent> DescendantsOrSelfOfType(this IPublishedContent content, string contentTypeAlias, string culture = null)
+        {
+            return content.DescendantsOrSelf(true, p => p.ContentType.Alias == contentTypeAlias, culture);
+        }
 
-        public static IEnumerable<T> DescendantsOrSelf<T>(this IPublishedContent content)
+        public static IEnumerable<T> DescendantsOrSelf<T>(this IPublishedContent content, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.DescendantsOrSelf().OfType<T>();
+            return content.DescendantsOrSelf(culture).OfType<T>();
         }
 
-        public static IEnumerable<T> DescendantsOrSelf<T>(this IPublishedContent content, int level)
+        public static IEnumerable<T> DescendantsOrSelf<T>(this IPublishedContent content, int level, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.DescendantsOrSelf(level).OfType<T>();
+            return content.DescendantsOrSelf(level, culture).OfType<T>();
         }
 
-        public static IPublishedContent Descendant(this IPublishedContent content)
+        public static IPublishedContent Descendant(this IPublishedContent content, string culture = null)
         {
-            return content.Children.FirstOrDefault();
+            return content.Children(culture).FirstOrDefault();
         }
 
-        public static IPublishedContent Descendant(this IPublishedContent content, int level)
+        public static IPublishedContent Descendant(this IPublishedContent content, int level, string culture = null)
         {
-            return content.EnumerateDescendants(false).FirstOrDefault(x => x.Level == level);
+            return content.EnumerateDescendants(false, culture).FirstOrDefault(x => x.Level == level);
         }
 
-        public static IPublishedContent Descendant(this IPublishedContent content, string contentTypeAlias)
+        public static IPublishedContent DescendantOfType(this IPublishedContent content, string contentTypeAlias, string culture = null)
         {
-            return content.EnumerateDescendants(false).FirstOrDefault(x => x.DocumentTypeAlias == contentTypeAlias);
+            return content.EnumerateDescendants(false, culture).FirstOrDefault(x => x.ContentType.Alias == contentTypeAlias);
         }
 
-        public static T Descendant<T>(this IPublishedContent content)
+        public static T Descendant<T>(this IPublishedContent content, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.EnumerateDescendants(false).FirstOrDefault(x => x is T) as T;
+            return content.EnumerateDescendants(false, culture).FirstOrDefault(x => x is T) as T;
         }
 
-        public static T Descendant<T>(this IPublishedContent content, int level)
+        public static T Descendant<T>(this IPublishedContent content, int level, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.Descendant(level) as T;
+            return content.Descendant(level, culture) as T;
         }
 
-        public static IPublishedContent DescendantOrSelf(this IPublishedContent content)
+        public static IPublishedContent DescendantOrSelf(this IPublishedContent content, string culture = null)
         {
             return content;
         }
 
-        public static IPublishedContent DescendantOrSelf(this IPublishedContent content, int level)
+        public static IPublishedContent DescendantOrSelf(this IPublishedContent content, int level, string culture = null)
         {
-            return content.EnumerateDescendants(true).FirstOrDefault(x => x.Level == level);
+            return content.EnumerateDescendants(true, culture).FirstOrDefault(x => x.Level == level);
         }
 
-        public static IPublishedContent DescendantOrSelf(this IPublishedContent content, string contentTypeAlias)
+        public static IPublishedContent DescendantOrSelfOfType(this IPublishedContent content, string contentTypeAlias, string culture = null)
         {
-            return content.EnumerateDescendants(true).FirstOrDefault(x => x.DocumentTypeAlias == contentTypeAlias);
+            return content.EnumerateDescendants(true, culture).FirstOrDefault(x => x.ContentType.Alias == contentTypeAlias);
         }
 
-        public static T DescendantOrSelf<T>(this IPublishedContent content)
+        public static T DescendantOrSelf<T>(this IPublishedContent content, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.EnumerateDescendants(true).FirstOrDefault(x => x is T) as T;
+            return content.EnumerateDescendants(true, culture).FirstOrDefault(x => x is T) as T;
         }
 
-        public static T DescendantOrSelf<T>(this IPublishedContent content, int level)
+        public static T DescendantOrSelf<T>(this IPublishedContent content, int level, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.DescendantOrSelf(level) as T;
-        }
-        
-        internal static IEnumerable<IPublishedContent> DescendantsOrSelf(this IPublishedContent content, bool orSelf, Func<IPublishedContent, bool> func)
-        {
-            return content.EnumerateDescendants(orSelf).Where(x => func == null || func(x));
+            return content.DescendantOrSelf(level, culture) as T;
         }
 
-        internal static IEnumerable<IPublishedContent> EnumerateDescendants(this IPublishedContent content, bool orSelf)
+        internal static IEnumerable<IPublishedContent> DescendantsOrSelf(this IPublishedContent content, bool orSelf, Func<IPublishedContent, bool> func, string culture = null)
         {
-            if (content == null) throw new ArgumentNullException("content");
+            return content.EnumerateDescendants(orSelf, culture).Where(x => func == null || func(x));
+        }
+
+        internal static IEnumerable<IPublishedContent> EnumerateDescendants(this IPublishedContent content, bool orSelf,  string culture = null)
+        {
+            if (content == null) throw new ArgumentNullException(nameof(content));
             if (orSelf) yield return content;
 
-            foreach (var child in content.Children)
-                foreach (var child2 in child.EnumerateDescendants())
-                    yield return child2;
+            foreach (var desc in content.Children(culture).SelectMany(x => x.EnumerateDescendants()))
+                yield return desc;
         }
 
-        internal static IEnumerable<IPublishedContent> EnumerateDescendants(this IPublishedContent content)
+        internal static IEnumerable<IPublishedContent> EnumerateDescendants(this IPublishedContent content, string culture = null)
         {
             yield return content;
 
-            foreach (var child in content.Children)
-                foreach (var child2 in child.EnumerateDescendants())
-                    yield return child2;
-        }
-        
-        #endregion
-
-		#region Axes: following-sibling, preceding-sibling, following, preceding + pseudo-axes up, down, next, previous
-
-        // up pseudo-axe ~ ancestors
-        // bogus, kept for backward compatibility but we should get rid of it
-        // better use ancestors
-
-		public static IPublishedContent Up(this IPublishedContent content)
-		{
-		    return content.Parent;
-		}
-
-		public static IPublishedContent Up(this IPublishedContent content, int number)
-		{
-            if (number < 0)
-                throw new ArgumentOutOfRangeException("number", "Must be greater than, or equal to, zero.");
-		    return number == 0 ? content : content.EnumerateAncestors(false).Skip(number).FirstOrDefault();
-		}
-
-		public static IPublishedContent Up(this IPublishedContent content, string contentTypeAlias)
-		{
-		    return string.IsNullOrEmpty(contentTypeAlias) 
-                ? content.Parent 
-                : content.Ancestor(contentTypeAlias);
-		}
-
-        // down pseudo-axe ~ children (not descendants)
-        // bogus, kept for backward compatibility but we should get rid of it
-        // better use descendants
-
-		public static IPublishedContent Down(this IPublishedContent content)
-		{
-		    return content.Children.FirstOrDefault();
-		}
-
-		public static IPublishedContent Down(this IPublishedContent content, int number)
-		{
-            if (number < 0)
-                throw new ArgumentOutOfRangeException("number", "Must be greater than, or equal to, zero.");
-		    if (number == 0) return content;
-
-            content = content.Children.FirstOrDefault();
-            while (content != null && --number > 0)
-                content = content.Children.FirstOrDefault();
-
-		    return content;
-		}
-
-		public static IPublishedContent Down(this IPublishedContent content, string contentTypeAlias)
-		{
-		    if (string.IsNullOrEmpty(contentTypeAlias))
-		        return content.Children.FirstOrDefault();
-
-            // note: this is what legacy did, but with a broken Descendant
-            // so fixing Descendant will change how it works...
-			return content.Descendant(contentTypeAlias);
-		}
-
-        // next pseudo-axe ~ following within the content set
-        // bogus, kept for backward compatibility but we should get rid of it
-
-		public static IPublishedContent Next(this IPublishedContent content)
-		{
-            return content.ContentSet.ElementAtOrDefault(content.GetIndex() + 1);
-        }
-
-		public static IPublishedContent Next(this IPublishedContent current, Func<IPublishedContent, bool> func) {
-			IPublishedContent next = current.Next();
-			while (next != null) {
-				if (func(next)) return next;
-				next = next.Next();
-			}
-			return null;
-		}
-
-        public static IPublishedContent Next(this IPublishedContent content, int number)
-		{
-            if (number < 0)
-                throw new ArgumentOutOfRangeException("number", "Must be greater than, or equal to, zero.");
-            return number == 0 ? content : content.ContentSet.ElementAtOrDefault(content.GetIndex() + number);
-        }
-
-        public static IPublishedContent Next(this IPublishedContent content, string contentTypeAlias)
-        {
-            return content.Next(contentTypeAlias, false);
-        }
-
-        public static IPublishedContent Next(this IPublishedContent content, string contentTypeAlias, bool wrap)
-        {
-            return content.Next(content.ContentSet, x => x.DocumentTypeAlias.InvariantEquals(contentTypeAlias), wrap);
-        }
-
-        public static T Next<T>(this IPublishedContent content)
-            where T : class, IPublishedContent
-        {
-            return content.Next<T>(false);
-        }
-
-        public static T Next<T>(this IPublishedContent content, bool wrap)
-            where T : class, IPublishedContent
-        {
-            return content.Next(content.ContentSet, x => x is T, wrap) as T;
-        }
-
-        static IPublishedContent Next(this IPublishedContent content, IEnumerable<IPublishedContent> axis, Func<IPublishedContent, bool> predicate, bool wrap)
-        {
-            var b4 = true;
-            IPublishedContent wrapped = null;
-            foreach (var c in axis)
-            {
-                if (b4)
-                {
-                    if (c.Id == content.Id)
-                        b4 = false;
-                    else if (wrap && wrapped == null && predicate(c))
-                        wrapped = c;
-                    continue;
-                }
-                if (predicate(c))
-                    return c;
-            }
-
-            return wrapped;
-        }
-
-        // previous pseudo-axe ~ preceding within the content set
-        // bogus, kept for backward compatibility but we should get rid of it
-
-        public static IPublishedContent Previous(this IPublishedContent content)
-		{
-            return content.ContentSet.ElementAtOrDefault(content.GetIndex() - 1);
-        }
-
-		public static IPublishedContent Previous(this IPublishedContent current, Func<IPublishedContent, bool> func) {
-			IPublishedContent prev = current.Previous();
-			while (prev != null) {
-				if (func(prev)) return prev;
-				prev = prev.Previous();
-			}
-			return null;
-		}
-
-		public static IPublishedContent Previous(this IPublishedContent content, int number)
-		{
-            if (number < 0)
-                throw new ArgumentOutOfRangeException("number", "Must be greater than, or equal to, zero.");
-            return number == 0 ? content : content.ContentSet.ElementAtOrDefault(content.GetIndex() - number);
-        }
-
-		public static IPublishedContent Previous(this IPublishedContent content, string contentTypeAlias)
-		{
-		    return content.Previous(contentTypeAlias, false);
-		}
-
-        public static IPublishedContent Previous(this IPublishedContent content, string contentTypeAlias, bool wrap)
-        {
-            return content.Next(content.ContentSet.Reverse(), x => x.DocumentTypeAlias.InvariantEquals(contentTypeAlias), wrap);
-        }
-
-        public static T Previous<T>(this IPublishedContent content)
-            where T : class, IPublishedContent
-        {
-            return content.Previous<T>(false);
-        }
-
-        public static T Previous<T>(this IPublishedContent content, bool wrap)
-            where T : class, IPublishedContent
-        {
-            return content.Next(content.ContentSet.Reverse(), x => x is T, wrap) as T;
-        }
-
-        //
-
-        [Obsolete("Obsolete, use FollowingSibling or PrecedingSibling instead.")]
-		public static IPublishedContent Sibling(this IPublishedContent content, int number)
-        {
-            if (number < 0)
-                throw new ArgumentOutOfRangeException("number", "Must be greater than, or equal to, zero.");
-            number += 1; // legacy is zero-based
-            return content.FollowingSibling(number);
-		}
-
-        // contentTypeAlias is case-insensitive
-        [Obsolete("Obsolete, use FollowingSibling or PrecedingSibling instead.")]
-        public static IPublishedContent Sibling(this IPublishedContent content, string contentTypeAlias)
-        {
-            // note: the original implementation seems to loop on all siblings
-            // ie if it reaches the end of the set, it starts again at the beginning.
-            // so here we wrap, although it's not consistent... but anyway those
-            // methods should be obsoleted.
-
-            return content.FollowingSibling(contentTypeAlias, true);
-        }
-
-        // following-sibling, preceding-sibling axes
-
-        public static IPublishedContent FollowingSibling(this IPublishedContent content)
-        {
-            return content.Siblings().ElementAtOrDefault(content.GetIndex(content.Siblings()) + 1);
-        }
-
-        public static IPublishedContent FollowingSibling(this IPublishedContent content, int number)
-        {
-            if (number < 0)
-                throw new ArgumentOutOfRangeException("number", "Must be greater than, or equal to, zero.");
-            return number == 0 ? content : content.Siblings().ElementAtOrDefault(content.GetIndex(content.Siblings()) + number);
-        }
-
-        // contentTypeAlias is case-insensitive
-        public static IPublishedContent FollowingSibling(this IPublishedContent content, string contentTypeAlias)
-        {
-            return content.FollowingSibling(contentTypeAlias, false);
-        }
-
-        // contentTypeAlias is case-insensitive
-        // note: not sure that one makes a lot of sense but it is here for backward compatibility
-        public static IPublishedContent FollowingSibling(this IPublishedContent content, string contentTypeAlias, bool wrap)
-        {
-            return content.Next(content.Siblings(), x => x.DocumentTypeAlias.InvariantEquals(contentTypeAlias), wrap);
-        }
-
-        public static T FollowingSibling<T>(this IPublishedContent content)
-            where T : class, IPublishedContent
-        {
-            return content.FollowingSibling<T>(false);
-        }
-
-        public static T FollowingSibling<T>(this IPublishedContent content, bool wrap)
-            where T : class, IPublishedContent
-        {
-            return content.Next(content.Siblings(), x => x is T, wrap) as T;
-        }
-
-        public static IPublishedContent PrecedingSibling(this IPublishedContent content)
-        {
-            return content.Siblings().ElementAtOrDefault(content.GetIndex(content.Siblings()) - 1);
-        }
-
-        public static IPublishedContent PrecedingSibling(this IPublishedContent content, int number)
-        {
-            if (number < 0)
-                throw new ArgumentOutOfRangeException("number", "Must be greater than, or equal to, zero.");
-            return number == 0 ? content : content.Siblings().ElementAtOrDefault(content.GetIndex(content.Siblings()) - number);
-        }
-
-        // contentTypeAlias is case-insensitive
-        public static IPublishedContent PrecedingSibling(this IPublishedContent content, string contentTypeAlias)
-        {
-            return content.PrecedingSibling(contentTypeAlias, false);
-        }
-
-        // contentTypeAlias is case-insensitive
-        // note: not sure that one makes a lot of sense but it is here for backward compatibility
-        public static IPublishedContent PrecedingSibling(this IPublishedContent content, string contentTypeAlias, bool wrap)
-        {
-            return content.Next(content.Siblings().Reverse(), x => x.DocumentTypeAlias.InvariantEquals(contentTypeAlias), wrap);
-        }
-
-        public static T PrecedingSibling<T>(this IPublishedContent content)
-            where T : class, IPublishedContent
-        {
-            return content.PrecedingSibling<T>(false);
-        }
-
-        public static T PrecedingSibling<T>(this IPublishedContent content, bool wrap)
-            where T : class, IPublishedContent
-        {
-            return content.Next(content.Siblings().Reverse(), x => x is T, wrap) as T;
-        }
-
-        // following, preceding axes - NOT IMPLEMENTED
-
-        // utilities
-
-        public static IEnumerable<IPublishedContent> Siblings(this IPublishedContent content)
-        {
-            // content.Parent, content.Children and cache.GetAtRoot() should be fast enough,
-            // or cached by the content cache, so that we don't have to implement cache here.
-
-            // returns the true tree siblings, even if the content is in a set
-            // get the root docs if parent is null
-
-            // note: I don't like having to refer to the "current" content cache here, but
-            // what else? would need root content to have a special, non-null but hidden,
-            // parent...
-
-
-
-            var siblings = content.Parent == null
-                ? content.ItemType == PublishedItemType.Media ? UmbracoContext.Current.MediaCache.GetAtRoot() : UmbracoContext.Current.ContentCache.GetAtRoot()
-                : content.Parent.Children;
-
-            // make sure we run it once
-            return siblings.ToArray();
-        }
-
-        public static IEnumerable<T> Siblings<T>(this IPublishedContent content)
-            where T : class, IPublishedContent
-        {
-            return content.Siblings().OfType<T>();
+            foreach (var desc in content.Children(culture).SelectMany(x => x.EnumerateDescendants()))
+                yield return desc;
         }
 
         #endregion
@@ -1709,7 +920,7 @@ namespace Umbraco.Web
         public static T Parent<T>(this IPublishedContent content)
             where T : class, IPublishedContent
         {
-            if (content == null) throw new ArgumentNullException("content");
+            if (content == null) throw new ArgumentNullException(nameof(content));
             return content.Parent as T;
         }
 
@@ -1718,18 +929,20 @@ namespace Umbraco.Web
         #region Axes: children
 
         /// <summary>
-		/// Gets the children of the content.
-		/// </summary>
-		/// <param name="content">The content.</param>
-		/// <returns>The children of the content.</returns>
-		/// <remarks>
+        /// Gets the children of the content.
+        /// </summary>
+        /// <param name="content">The content.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
+        /// <returns>The children of the content.</returns>
+        /// <remarks>
         /// <para>Children are sorted by their sortOrder.</para>
         /// <para>This method exists for consistency, it is the same as calling content.Children as a property.</para>
-		/// </remarks>
-		public static IEnumerable<IPublishedContent> Children(this IPublishedContent content)
+        /// </remarks>
+        public static IEnumerable<IPublishedContent> Children(this IPublishedContent content, string culture = null)
         {
-            if (content == null) throw new ArgumentNullException("content");
-            return content.Children;
+            if (content == null) throw new ArgumentNullException(nameof(content));
+
+            return content.Children.WhereIsInvariantOrHasCulture(culture);
         }
 
         /// <summary>
@@ -1737,13 +950,26 @@ namespace Umbraco.Web
         /// </summary>
         /// <param name="content">The content.</param>
         /// <param name="predicate">The predicate.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
         /// <returns>The children of the content, filtered by the predicate.</returns>
         /// <remarks>
         /// <para>Children are sorted by their sortOrder.</para>
         /// </remarks>
-        public static IEnumerable<IPublishedContent> Children(this IPublishedContent content, Func<IPublishedContent, bool> predicate)
+        public static IEnumerable<IPublishedContent> Children(this IPublishedContent content, Func<IPublishedContent, bool> predicate, string culture = null)
         {
-            return content.Children().Where(predicate);
+            return content.Children(culture).Where(predicate);
+        }
+
+        /// <summary>
+        /// Gets the children of the content, of any of the specified types.
+        /// </summary>
+        /// <param name="content">The content.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
+        /// <param name="contentTypeAlias">The content type alias.</param>
+        /// <returns>The children of the content, of any of the specified types.</returns>
+        public static IEnumerable<IPublishedContent> ChildrenOfType(this IPublishedContent content, string contentTypeAlias, string culture = null)
+        {
+            return content.Children(x => contentTypeAlias.InvariantContains(x.ContentType.Alias), culture);
         }
 
         /// <summary>
@@ -1751,187 +977,281 @@ namespace Umbraco.Web
         /// </summary>
         /// <typeparam name="T">The content type.</typeparam>
         /// <param name="content">The content.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
         /// <returns>The children of content, of the given content type.</returns>
         /// <remarks>
         /// <para>Children are sorted by their sortOrder.</para>
         /// </remarks>
-        public static IEnumerable<T> Children<T>(this IPublishedContent content)
+        public static IEnumerable<T> Children<T>(this IPublishedContent content, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.Children().OfType<T>();
+            return content.Children(culture).OfType<T>();
         }
 
-        public static IPublishedContent FirstChild(this IPublishedContent content)
+        public static IPublishedContent FirstChild(this IPublishedContent content, string culture = null)
         {
-            return content.Children().FirstOrDefault();
+            return content.Children(culture).FirstOrDefault();
         }
 
-        public static IPublishedContent FirstChild(this IPublishedContent content, Func<IPublishedContent, bool> predicate)
+        /// <summary>
+        /// Gets the first child of the content, of a given content type.
+        /// </summary>
+        public static IPublishedContent FirstChildOfType(this IPublishedContent content, string contentTypeAlias, string culture = null)
         {
-            return content.Children(predicate).FirstOrDefault();
+            return content.ChildrenOfType(contentTypeAlias, culture).FirstOrDefault();
         }
 
-        public static IPublishedContent FirstChild<T>(this IPublishedContent content)
+        public static IPublishedContent FirstChild(this IPublishedContent content, Func<IPublishedContent, bool> predicate, string culture = null)
+        {
+            return content.Children(predicate, culture).FirstOrDefault();
+        }
+
+        public static IPublishedContent FirstChild(this IPublishedContent content, Guid uniqueId, string culture = null)
+        {
+            return content.Children(x=>x.Key == uniqueId, culture).FirstOrDefault();
+        }
+
+        public static T FirstChild<T>(this IPublishedContent content, string culture = null)
             where T : class, IPublishedContent
         {
-            return content.Children<T>().FirstOrDefault();
+            return content.Children<T>(culture).FirstOrDefault();
         }
 
-		/// <summary>
-		/// Gets the children of the content in a DataTable.
-		/// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="contentTypeAliasFilter">An optional content type alias.</param>
-        /// <returns>The children of the content.</returns>
-		public static DataTable ChildrenAsTable(this IPublishedContent content, string contentTypeAliasFilter = "")
-		{
-            return GenerateDataTable(content, contentTypeAliasFilter);
-		}
+        public static T FirstChild<T>(this IPublishedContent content, Func<T, bool> predicate, string culture = null)
+            where T : class, IPublishedContent
+        {
+            return content.Children<T>(culture).FirstOrDefault(predicate);
+        }
 
-		/// <summary>
+        /// <summary>
         /// Gets the children of the content in a DataTable.
         /// </summary>
         /// <param name="content">The content.</param>
+        /// <param name="services">A service context.</param>
         /// <param name="contentTypeAliasFilter">An optional content type alias.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
         /// <returns>The children of the content.</returns>
-        private static DataTable GenerateDataTable(IPublishedContent content, string contentTypeAliasFilter = "")
-		{
-			var firstNode = contentTypeAliasFilter.IsNullOrWhiteSpace()
-								? content.Children.Any()
-									? content.Children.ElementAt(0)
-									: null
-								: content.Children.FirstOrDefault(x => x.DocumentTypeAlias == contentTypeAliasFilter);
-			if (firstNode == null)
-				return new DataTable(); //no children found 
+        public static DataTable ChildrenAsTable(this IPublishedContent content, ServiceContext services, string contentTypeAliasFilter = "", string culture = null)
+        {
+            return GenerateDataTable(content, services, contentTypeAliasFilter, culture);
+        }
 
-			//use new utility class to create table so that we don't have to maintain code in many places, just one
-			var dt = Core.DataTableExtensions.GenerateDataTable(
-				//pass in the alias of the first child node since this is the node type we're rendering headers for
-				firstNode.DocumentTypeAlias,
-				//pass in the callback to extract the Dictionary<string, string> of all defined aliases to their names
-				alias => GetPropertyAliasesAndNames(alias),
-				//pass in a callback to populate the datatable, yup its a bit ugly but it's already legacy and we just want to maintain code in one place.
-				() =>
-				{
-					//create all row data
-					var tableData = Core.DataTableExtensions.CreateTableData();
-					//loop through each child and create row data for it
-					foreach (var n in content.Children.OrderBy(x => x.SortOrder))
-					{
-						if (contentTypeAliasFilter.IsNullOrWhiteSpace() == false)
-						{
-							if (n.DocumentTypeAlias != contentTypeAliasFilter)
-								continue; //skip this one, it doesn't match the filter
-						}
+        /// <summary>
+        /// Gets the children of the content in a DataTable.
+        /// </summary>
+        /// <param name="content">The content.</param>
+        /// <param name="services">A service context.</param>
+        /// <param name="contentTypeAliasFilter">An optional content type alias.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
+        /// <returns>The children of the content.</returns>
+        private static DataTable GenerateDataTable(IPublishedContent content, ServiceContext services, string contentTypeAliasFilter = "", string culture = null)
+        {
+            var firstNode = contentTypeAliasFilter.IsNullOrWhiteSpace()
+                                ? content.Children(culture).Any()
+                                    ? content.Children(culture).ElementAt(0)
+                                    : null
+                                : content.Children(culture).FirstOrDefault(x => x.ContentType.Alias == contentTypeAliasFilter);
+            if (firstNode == null)
+                return new DataTable(); //no children found
 
-						var standardVals = new Dictionary<string, object>
-						    {
-									{ "Id", n.Id },
-									{ "NodeName", n.Name },
-									{ "NodeTypeAlias", n.DocumentTypeAlias },
-									{ "CreateDate", n.CreateDate },
-									{ "UpdateDate", n.UpdateDate },
-									{ "CreatorName", n.CreatorName },
-									{ "WriterName", n.WriterName },
-									{ "Url", n.Url }
-								};
+            //use new utility class to create table so that we don't have to maintain code in many places, just one
+            var dt = Core.DataTableExtensions.GenerateDataTable(
+                //pass in the alias of the first child node since this is the node type we're rendering headers for
+                firstNode.ContentType.Alias,
+                //pass in the callback to extract the Dictionary<string, string> of all defined aliases to their names
+                alias => GetPropertyAliasesAndNames(services, alias),
+                //pass in a callback to populate the datatable, yup its a bit ugly but it's already legacy and we just want to maintain code in one place.
+                () =>
+                {
+                    //create all row data
+                    var tableData = Core.DataTableExtensions.CreateTableData();
+                    //loop through each child and create row data for it
+                    foreach (var n in content.Children.OrderBy(x => x.SortOrder))
+                    {
+                        if (contentTypeAliasFilter.IsNullOrWhiteSpace() == false)
+                        {
+                            if (n.ContentType.Alias != contentTypeAliasFilter)
+                                continue; //skip this one, it doesn't match the filter
+                        }
 
-						var userVals = new Dictionary<string, object>();
-                        foreach (var p in from IPublishedProperty p in n.Properties where p.DataValue != null select p)
+                        var standardVals = new Dictionary<string, object>
+                            {
+                                    { "Id", n.Id },
+                                    { "NodeName", n.Name },
+                                    { "NodeTypeAlias", n.ContentType.Alias },
+                                    { "CreateDate", n.CreateDate },
+                                    { "UpdateDate", n.UpdateDate },
+                                    { "CreatorName", n.CreatorName },
+                                    { "WriterName", n.WriterName },
+                                    { "Url", n.Url }
+                                };
+
+                        var userVals = new Dictionary<string, object>();
+                        foreach (var p in from IPublishedProperty p in n.Properties where p.GetSourceValue() != null select p)
                         {
                             // probably want the "object value" of the property here...
-							userVals[p.PropertyTypeAlias] = p.Value;
-						}
-						//add the row data
-						Core.DataTableExtensions.AddRowData(tableData, standardVals, userVals);
-					}
-					return tableData;
-				}
-				);
-			return dt;
-		}
+                            userVals[p.Alias] = p.GetValue();
+                        }
+                        //add the row data
+                        Core.DataTableExtensions.AddRowData(tableData, standardVals, userVals);
+                    }
+                    return tableData;
+                }
+                );
+            return dt;
+        }
 
         #endregion
 
-        #region OfTypes
+        #region Axes: Siblings
 
-        // the .OfType<T>() filter is nice when there's only one type
-        // this is to support filtering with multiple types
-
-        public static IEnumerable<IPublishedContent> OfTypes(this IEnumerable<IPublishedContent> contents, params Type[] types)
+        /// <summary>
+        /// Gets the siblings of the content.
+        /// </summary>
+        /// <param name="content">The content.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
+        /// <returns>The siblings of the content.</returns>
+        /// <remarks>
+        ///   <para>Note that in V7 this method also return the content node self.</para>
+        /// </remarks>
+        public static IEnumerable<IPublishedContent> Siblings(this IPublishedContent content, string culture = null)
         {
-            return contents.Where(x => types.Contains(x.GetType()));
+            return SiblingsAndSelf(content, culture).Where(x => x.Id != content.Id);
         }
 
-        public static IEnumerable<IPublishedContent> OfTypes(this IEnumerable<IPublishedContent> contents, params string[] types)
+        /// <summary>
+        /// Gets the siblings of the content, of a given content type.
+        /// </summary>
+        /// <param name="content">The content.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
+        /// <param name="contentTypeAlias">The content type alias.</param>
+        /// <returns>The siblings of the content, of the given content type.</returns>
+        /// <remarks>
+        ///   <para>Note that in V7 this method also return the content node self.</para>
+        /// </remarks>
+        public static IEnumerable<IPublishedContent> SiblingsOfType(this IPublishedContent content, string contentTypeAlias, string culture = null)
         {
-            types = types.Select(x => x.ToLowerInvariant()).ToArray();
-            return contents.Where(x => types.Contains(x.DocumentTypeAlias.ToLowerInvariant()));
+            return SiblingsAndSelfOfType(content, contentTypeAlias, culture).Where(x => x.Id != content.Id);
         }
 
-        public static T OfType<T>(this IPublishedContent content)
+        /// <summary>
+        /// Gets the siblings of the content, of a given content type.
+        /// </summary>
+        /// <typeparam name="T">The content type.</typeparam>
+        /// <param name="content">The content.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
+        /// <returns>The siblings of the content, of the given content type.</returns>
+        /// <remarks>
+        ///   <para>Note that in V7 this method also return the content node self.</para>
+        /// </remarks>
+        public static IEnumerable<IPublishedContent> Siblings<T>(this IPublishedContent content, string culture = null)
             where T : class, IPublishedContent
         {
-            return content as T;
+            return SiblingsAndSelf<T>(content, culture).Where(x => x.Id != content.Id);
+        }
+
+        /// <summary>
+        /// Gets the siblings of the content including the node itself to indicate the position.
+        /// </summary>
+        /// <param name="content">The content.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
+        /// <returns>The siblings of the content including the node itself.</returns>
+        public static IEnumerable<IPublishedContent> SiblingsAndSelf(this IPublishedContent content, string culture = null)
+        {
+            return content.Parent != null
+                ? content.Parent.Children(culture)
+                : PublishedSnapshot.Content.GetAtRoot().WhereIsInvariantOrHasCulture(culture);
+        }
+
+        /// <summary>
+        /// Gets the siblings of the content including the node itself to indicate the position, of a given content type.
+        /// </summary>
+        /// <param name="content">The content.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
+        /// <param name="contentTypeAlias">The content type alias.</param>
+        /// <returns>The siblings of the content including the node itself, of the given content type.</returns>
+        public static IEnumerable<IPublishedContent> SiblingsAndSelfOfType(this IPublishedContent content, string contentTypeAlias, string culture = null)
+        {
+            return content.Parent != null
+                ? content.Parent.ChildrenOfType(contentTypeAlias, culture)
+                : PublishedSnapshot.Content.GetAtRoot().OfTypes(contentTypeAlias).WhereIsInvariantOrHasCulture(culture);
+        }
+
+        /// <summary>
+        /// Gets the siblings of the content including the node itself to indicate the position, of a given content type.
+        /// </summary>
+        /// <typeparam name="T">The content type.</typeparam>
+        /// <param name="content">The content.</param>
+        /// <param name="culture">The specific culture to filter for. If null is used the current culture is used. (Default is null)</param>
+        /// <returns>The siblings of the content including the node itself, of the given content type.</returns>
+        public static IEnumerable<T> SiblingsAndSelf<T>(this IPublishedContent content, string culture = null)
+            where T : class, IPublishedContent
+        {
+            return content.Parent != null
+                ? content.Parent.Children<T>(culture)
+                : PublishedSnapshot.Content.GetAtRoot().OfType<T>().WhereIsInvariantOrHasCulture(culture);
+        }
+
+        #endregion
+
+        #region Axes: custom
+
+        /// <summary>
+        /// Gets the root content for this content.
+        /// </summary>
+        /// <param name="content">The content.</param>
+        /// <returns>The 'site' content ie AncestorOrSelf(1).</returns>
+        public static IPublishedContent Root(this IPublishedContent content)
+        {
+            return content.AncestorOrSelf(1);
         }
 
         #endregion
 
         #region PropertyAliasesAndNames
 
-        private static Func<string, Dictionary<string, string>> _getPropertyAliasesAndNames;
-
-		/// <summary>
-		/// This is used only for unit tests to set the delegate to look up aliases/names dictionary of a content type
-		/// </summary>
-		internal static Func<string, Dictionary<string, string>> GetPropertyAliasesAndNames
-		{
-			get
-			{
-				return _getPropertyAliasesAndNames ?? (_getPropertyAliasesAndNames = alias =>
-					{
-						var userFields = ContentType.GetAliasesAndNames(alias);
-						//ensure the standard fields are there
-						var allFields = new Dictionary<string, string>()
-							{
-								{"Id", "Id"},
-								{"NodeName", "NodeName"},
-								{"NodeTypeAlias", "NodeTypeAlias"},
-								{"CreateDate", "CreateDate"},
-								{"UpdateDate", "UpdateDate"},
-								{"CreatorName", "CreatorName"},
-								{"WriterName", "WriterName"},
-								{"Url", "Url"}
-							};
-						foreach (var f in userFields.Where(f => allFields.ContainsKey(f.Key) == false))
-						{
-							allFields.Add(f.Key, f.Value);
-						}
-						return allFields;
-					});
-			}
-			set { _getPropertyAliasesAndNames = value; }
-        }
-
-        #endregion
-
-        #region Culture
+        private static Func<ServiceContext, string, Dictionary<string, string>> _getPropertyAliasesAndNames;
 
         /// <summary>
-        /// Gets the culture that would be selected to render a specified content,
-        /// within the context of a specified current request.
+        /// This is used only for unit tests to set the delegate to look up aliases/names dictionary of a content type
         /// </summary>
-        /// <param name="content">The content.</param>
-        /// <param name="current">The request Uri.</param>
-        /// <returns>The culture that would be selected to render the content.</returns>
-        public static CultureInfo GetCulture(this IPublishedContent content, Uri current = null)
+        internal static Func<ServiceContext, string, Dictionary<string, string>> GetPropertyAliasesAndNames
         {
-            return Models.ContentExtensions.GetCulture(UmbracoContext.Current,
-                ApplicationContext.Current.Services.DomainService, 
-                ApplicationContext.Current.Services.LocalizationService,
-                ApplicationContext.Current.Services.ContentService,
-                content.Id, content.Path,
-                current);
+            get => _getPropertyAliasesAndNames ?? GetAliasesAndNames;
+            set => _getPropertyAliasesAndNames = value;
+        }
+
+        private static Dictionary<string, string> GetAliasesAndNames(ServiceContext services, string alias)
+        {
+            var type = services.ContentTypeService.Get(alias)
+                ?? services.MediaTypeService.Get(alias)
+                ?? (IContentTypeBase)services.MemberTypeService.Get(alias);
+            var fields = GetAliasesAndNames(type);
+
+            // ensure the standard fields are there
+            var stdFields = new Dictionary<string, string>
+            {
+                {"Id", "Id"},
+                {"NodeName", "NodeName"},
+                {"NodeTypeAlias", "NodeTypeAlias"},
+                {"CreateDate", "CreateDate"},
+                {"UpdateDate", "UpdateDate"},
+                {"CreatorName", "CreatorName"},
+                {"WriterName", "WriterName"},
+                {"Url", "Url"}
+            };
+
+            foreach (var field in stdFields.Where(x => fields.ContainsKey(x.Key) == false))
+            {
+                fields[field.Key] = field.Value;
+            }
+
+            return fields;
+        }
+
+        private static Dictionary<string, string> GetAliasesAndNames(IContentTypeBase contentType)
+        {
+            return contentType.PropertyTypes.ToDictionary(x => x.Alias, x => x.Name);
         }
 
         #endregion

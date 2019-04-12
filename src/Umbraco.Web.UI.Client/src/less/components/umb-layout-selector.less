@@ -5,7 +5,7 @@
 
 .umb-layout-selector__active-layout {
    box-sizing: border-box;
-   border: 1px solid transparent;
+   border: 1px solid @inputBorder;
    cursor: pointer;
    height: 30px;
    width: 30px;
@@ -16,7 +16,7 @@
 }
 
 .umb-layout-selector__active-layout:hover {
-   border-color: @grayLight;
+   border-color: @inputBorderFocus;
 }
 
 .umb-layout-selector__dropdown {
@@ -44,7 +44,7 @@
 }
 
 .umb-layout-selector__dropdown-item:hover {
-   border: 1px solid @grayLight;
+   border: 1px solid @gray-8;
 }
 
 .umb-layout-selector__dropdown-item.-active {

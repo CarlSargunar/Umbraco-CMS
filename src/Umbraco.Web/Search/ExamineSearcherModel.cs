@@ -11,14 +11,11 @@ namespace Umbraco.Web.Search
     {
         public ExamineSearcherModel()
         {
-            ProviderProperties = new Dictionary<string, string>();
         }
 
         [DataMember(Name = "name")]
         public string Name { get; set; }
 
-        [DataMember(Name = "providerProperties")]
-        public IDictionary<string, string> ProviderProperties { get; private set; }
     }
 
 }

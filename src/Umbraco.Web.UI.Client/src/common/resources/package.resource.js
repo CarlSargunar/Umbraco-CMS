@@ -19,9 +19,18 @@ function packageResource($q, $http, umbDataFormatter, umbRequestHelper) {
             return umbRequestHelper.resourcePromise(
                $http.get(
                    umbRequestHelper.getApiUrl(
-                       "packageInstallApiBaseUrl",
+                       "packageApiBaseUrl",
                        "GetInstalled")),
                'Failed to get installed packages');
+        },
+
+        validateInstalled: function (name, version) {
+            return umbRequestHelper.resourcePromise(
+               $http.post(
+                   umbRequestHelper.getApiUrl(
+                       "packageInstallApiBaseUrl",
+                       "ValidateInstalled", { name: name, version: version })),
+               'Failed to validate package ' + name);
         },
 
         uninstall: function(packageId) {
@@ -39,7 +48,7 @@ function packageResource($q, $http, umbDataFormatter, umbRequestHelper) {
          * @methodOf umbraco.resources.packageInstallResource
          *
          * @description
-         * Downloads a package file from our.umbraco.org to the website server.
+         * Downloads a package file from our.umbraco.com to the website server.
          * 
          * ##usage
          * <pre>
@@ -86,43 +95,141 @@ function packageResource($q, $http, umbDataFormatter, umbRequestHelper) {
          * @returns {Int} the ID assigned to the saved package manifest
          *
          */ 
-        import: function (package) {
+        import: function (umbPackage) {
            
             return umbRequestHelper.resourcePromise(
                 $http.post(
                   umbRequestHelper.getApiUrl(
                       "packageInstallApiBaseUrl",
-                      "Import"), package),
-              'Failed to create package manifest for zip file ');
+                      "Import"), umbPackage),
+              'Failed to install package. Error during the step "Import" ');
         }, 
 
-        installFiles: function (package) {
+        installFiles: function (umbPackage) {
             return umbRequestHelper.resourcePromise(
                 $http.post(
                   umbRequestHelper.getApiUrl(
                       "packageInstallApiBaseUrl",
-                      "InstallFiles"), package),
-              'Failed to create package manifest for zip file ');
+                      "InstallFiles"), umbPackage),
+              'Failed to install package. Error during the step "InstallFiles" ');
         }, 
 
-        installData: function (package) {
+        checkRestart: function (umbPackage) {
+
+          return umbRequestHelper.resourcePromise(
+            $http.post(
+              umbRequestHelper.getApiUrl(
+                "packageInstallApiBaseUrl",
+                "CheckRestart"), umbPackage),
+            'Failed to install package. Error during the step "CheckRestart" ');
+        }, 
+
+        installData: function (umbPackage) {
            
             return umbRequestHelper.resourcePromise(
                 $http.post(
                   umbRequestHelper.getApiUrl(
                       "packageInstallApiBaseUrl",
-                      "InstallData"), package),
-              'Failed to create package manifest for zip file ');
+                      "InstallData"), umbPackage),
+              'Failed to install package. Error during the step "InstallData" ');
         }, 
 
-        cleanUp: function (package) {
+        cleanUp: function (umbPackage) {
            
             return umbRequestHelper.resourcePromise(
                 $http.post(
                   umbRequestHelper.getApiUrl(
                       "packageInstallApiBaseUrl",
-                      "CleanUp"), package),
-              'Failed to create package manifest for zip file ');
+                      "CleanUp"), umbPackage),
+              'Failed to install package. Error during the step "CleanUp" ');
+        },
+
+        /**
+         * @ngdoc method
+         * @name umbraco.resources.packageInstallResource#getCreated
+         * @methodOf umbraco.resources.packageInstallResource
+         *
+         * @description
+         * Gets a list of created packages       
+         */
+        getAllCreated: function() {
+            return umbRequestHelper.resourcePromise(
+                $http.get(
+                    umbRequestHelper.getApiUrl(
+                        "packageApiBaseUrl",
+                        "GetCreatedPackages")),
+                'Failed to get created packages');
+        },
+
+        /**
+         * @ngdoc method
+         * @name umbraco.resources.packageInstallResource#getCreatedById
+         * @methodOf umbraco.resources.packageInstallResource
+         *
+         * @description
+         * Gets a created package by id       
+         */
+        getCreatedById: function(id) {
+            return umbRequestHelper.resourcePromise(
+                $http.get(
+                    umbRequestHelper.getApiUrl(
+                        "packageApiBaseUrl",
+                        "GetCreatedPackageById", 
+                        { id: id })),
+                'Failed to get package');
+        },
+
+        getInstalledById: function (id) {
+            return umbRequestHelper.resourcePromise(
+                $http.get(
+                    umbRequestHelper.getApiUrl(
+                        "packageApiBaseUrl",
+                        "GetInstalledPackageById",
+                        { id: id })),
+                'Failed to get package');
+        },
+
+        getEmpty: function () {
+            return umbRequestHelper.resourcePromise(
+                $http.get(
+                    umbRequestHelper.getApiUrl(
+                        "packageApiBaseUrl",
+                        "getEmpty")),
+                'Failed to get scaffold');
+        },
+
+        /**
+         * @ngdoc method
+         * @name umbraco.resources.packageInstallResource#savePackage
+         * @methodOf umbraco.resources.packageInstallResource
+         *
+         * @description
+         * Creates or updates a package
+         */
+        savePackage: function (umbPackage) {
+            return umbRequestHelper.resourcePromise(
+                $http.post(
+                    umbRequestHelper.getApiUrl(
+                        "packageApiBaseUrl",
+                        "PostSavePackage"), umbPackage),
+                'Failed to create package');
+        },
+
+        /**
+         * @ngdoc method
+         * @name umbraco.resources.packageInstallResource#deleteCreatedPackage
+         * @methodOf umbraco.resources.packageInstallResource
+         *
+         * @description
+         * Detes a created package
+         */
+        deleteCreatedPackage: function (packageId) {
+            return umbRequestHelper.resourcePromise(
+               $http.post(
+                   umbRequestHelper.getApiUrl(
+                       "packageApiBaseUrl",
+                       "DeleteCreatedPackage", { packageId: packageId })),
+               'Failed to delete package ' + packageId);
         }
     };
 }

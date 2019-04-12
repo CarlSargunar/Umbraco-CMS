@@ -70,8 +70,26 @@ function appState(eventsService) {
         currentNode: null,
         //Whether the menu's dialog is being shown or not
         showMenuDialog: null,
+        //Whether the menu's dialog can be hidden or not
+        allowHideMenuDialog: true,
+        // The dialogs template
+        dialogTemplateUrl: null,
         //Whether the context menu is being shown or not
         showMenu: null
+    };
+
+    var searchState = {
+        //Whether the search is being shown or not
+        show: null
+    };
+
+    var drawerState = {
+        //this view to show
+        view: null,
+        // bind custom values to the drawer
+        model: null,
+        //Whether the drawer is being shown or not
+        showDrawer: null
     };
 
     /** function to validate and set the state on a state object */
@@ -212,87 +230,64 @@ function appState(eventsService) {
             setState(menuState, key, value, "menuState");
         },
 
+        /**
+         * @ngdoc function
+         * @name umbraco.services.angularHelper#getSearchState
+         * @methodOf umbraco.services.appState
+         * @function
+         *
+         * @description
+         * Returns the current search state value by key - we do not return an object here - we do NOT want this
+         * to be publicly mutable and allow setting arbitrary values
+         *
+         */
+        getSearchState: function (key) {
+            return getState(searchState, key, "searchState");
+        },
+        
+        /**
+         * @ngdoc function
+         * @name umbraco.services.angularHelper#setSearchState
+         * @methodOf umbraco.services.appState
+         * @function
+         *
+         * @description
+         * Sets a section state value by key
+         *
+         */
+        setSearchState: function (key, value) {
+            setState(searchState, key, value, "searchState");
+        },
+
+        /**
+         * @ngdoc function
+         * @name umbraco.services.angularHelper#getDrawerState
+         * @methodOf umbraco.services.appState
+         * @function
+         *
+         * @description
+         * Returns the current drawer state value by key - we do not return an object here - we do NOT want this
+         * to be publicly mutable and allow setting arbitrary values
+         *
+         */
+        getDrawerState: function (key) {
+            return getState(drawerState, key, "drawerState");
+        },
+
+        /**
+         * @ngdoc function
+         * @name umbraco.services.angularHelper#setDrawerState
+         * @methodOf umbraco.services.appState
+         * @function
+         *
+         * @description
+         * Sets a drawer state value by key
+         *
+         */
+        setDrawerState: function (key, value) {
+            setState(drawerState, key, value, "drawerState");
+        }
+
     };
 }
 angular.module('umbraco.services').factory('appState', appState);
-
-/**
- * @ngdoc service
- * @name umbraco.services.editorState
- * @function
- *
- * @description
- * Tracks the parent object for complex editors by exposing it as 
- * an object reference via editorState.current.entity
- *
- * it is possible to modify this object, so should be used with care
- */
-angular.module('umbraco.services').factory("editorState", function() {
-
-    var current = null;
-    var state = {
-
-        /**
-         * @ngdoc function
-         * @name umbraco.services.angularHelper#set
-         * @methodOf umbraco.services.editorState
-         * @function
-         *
-         * @description
-         * Sets the current entity object for the currently active editor
-         * This is only used when implementing an editor with a complex model
-         * like the content editor, where the model is modified by several
-         * child controllers. 
-         */
-        set: function (entity) {
-            current = entity;
-        },
-
-        /**
-         * @ngdoc function
-         * @name umbraco.services.angularHelper#reset
-         * @methodOf umbraco.services.editorState
-         * @function
-         *
-         * @description
-         * Since the editorstate entity is read-only, you cannot set it to null
-         * only through the reset() method
-         */
-        reset: function() {
-            current = null;
-        },
-
-        /**
-         * @ngdoc function
-         * @name umbraco.services.angularHelper#getCurrent
-         * @methodOf umbraco.services.editorState
-         * @function
-         *
-         * @description
-         * Returns an object reference to the current editor entity.
-         * the entity is the root object of the editor.
-         * EditorState is used by property/parameter editors that need
-         * access to the entire entity being edited, not just the property/parameter 
-         *
-         * editorState.current can not be overwritten, you should only read values from it
-         * since modifying individual properties should be handled by the property editors
-         */
-        getCurrent: function() {
-            return current;
-        }
-    };
-
-    //TODO: This shouldn't be removed! use getCurrent() method instead of a hacked readonly property which is confusing.
-
-    //create a get/set property but don't allow setting
-    Object.defineProperty(state, "current", {
-        get: function () {
-            return current;
-        },
-        set: function (value) {
-            throw "Use editorState.set to set the value of the current entity";
-        },
-    });
-
-    return state;
-});

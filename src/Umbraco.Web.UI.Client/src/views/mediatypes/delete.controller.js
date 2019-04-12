@@ -6,7 +6,7 @@
  * @description
  * The controller for the media type delete dialog
  */
-function MediaTypesDeleteController($scope, dataTypeResource, mediaTypeResource, treeService, navigationService) {
+function MediaTypesDeleteController($scope, mediaTypeResource, treeService, navigationService) {
 
     $scope.performDelete = function() {
 
@@ -18,7 +18,7 @@ function MediaTypesDeleteController($scope, dataTypeResource, mediaTypeResource,
             //get the root node before we remove it
             var rootNode = treeService.getTreeRoot($scope.currentNode);
 
-            //TODO: Need to sync tree, etc...
+            // TODO: Need to sync tree, etc...
             treeService.removeNode($scope.currentNode);
             navigationService.hideMenu();
         });
@@ -35,7 +35,7 @@ function MediaTypesDeleteController($scope, dataTypeResource, mediaTypeResource,
             //get the root node before we remove it
             var rootNode = treeService.getTreeRoot($scope.currentNode);
 
-            //TODO: Need to sync tree, etc...
+            // TODO: Need to sync tree, etc...
             treeService.removeNode($scope.currentNode);
             navigationService.hideMenu();
         });

@@ -1,14 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Web.Http;
-using AutoMapper;
-using Umbraco.Core;
+using Umbraco.Core.Models;
+using Umbraco.Core.Persistence.DatabaseModelDefinitions;
 using Umbraco.Web.Models.ContentEditing;
-using umbraco.BusinessLogic;
 using Umbraco.Web.Mvc;
+using Umbraco.Web.WebApi.Filters;
 
 namespace Umbraco.Web.Editors
 {
@@ -18,30 +15,64 @@ namespace Umbraco.Web.Editors
     [PluginController("UmbracoApi")]
     public class LogController : UmbracoAuthorizedJsonController
     {
-        public IEnumerable<AuditLog> GetEntityLog(int id)
+        [UmbracoApplicationAuthorize(Core.Constants.Applications.Content, Core.Constants.Applications.Media)]
+        public PagedResult<AuditLog> GetPagedEntityLog(int id,
+            int pageNumber = 1,
+            int pageSize = 0,
+            Direction orderDirection = Direction.Descending,
+            DateTime? sinceDate = null)
         {
-            return Mapper.Map<IEnumerable<AuditLog>>(
-                Log.Instance.GetLogItems(id));
+            long totalRecords;
+            var dateQuery = sinceDate.HasValue ? SqlContext.Query<IAuditItem>().Where(x => x.CreateDate >= sinceDate) : null;
+            var result = Services.AuditService.GetPagedItemsByEntity(id, pageNumber - 1, pageSize, out totalRecords, orderDirection, customFilter: dateQuery);
+            var mapped = result.Select(item => Mapper.Map<AuditLog>(item));        
+
+            var page = new PagedResult<AuditLog>(totalRecords, pageNumber, pageSize)
+            {
+                Items = MapAvatarsAndNames(mapped)
+            };
+
+            return page;
         }
 
-        public IEnumerable<AuditLog> GetCurrentUserLog(AuditLogType logType, DateTime? sinceDate)
+        public PagedResult<AuditLog> GetPagedCurrentUserLog(
+            int pageNumber = 1,
+            int pageSize = 0,
+            Direction orderDirection = Direction.Descending,
+            DateTime? sinceDate = null)
         {
-            if (sinceDate == null)
-                sinceDate = DateTime.Now.Subtract(new TimeSpan(7, 0, 0, 0, 0));
-
-            var u = new User(Security.CurrentUser);
-            return Mapper.Map<IEnumerable<AuditLog>>(
-                Log.Instance.GetLogItems(u, Enum<LogTypes>.Parse(logType.ToString()), sinceDate.Value));
+            long totalRecords;
+            var dateQuery = sinceDate.HasValue ? SqlContext.Query<IAuditItem>().Where(x => x.CreateDate >= sinceDate) : null;
+            var userId = Security.GetUserId().ResultOr(0);
+            var result = Services.AuditService.GetPagedItemsByUser(userId, pageNumber - 1, pageSize, out totalRecords, orderDirection, customFilter:dateQuery);
+            var mapped = Mapper.MapEnumerable<IAuditItem, AuditLog>(result);
+            return new PagedResult<AuditLog>(totalRecords, pageNumber, pageSize)
+            {
+                Items = MapAvatarsAndNames(mapped)
+            };
         }
-
-        public IEnumerable<AuditLog> GetLog(AuditLogType logType, DateTime? sinceDate)
+        
+        private IEnumerable<AuditLog> MapAvatarsAndNames(IEnumerable<AuditLog> items)
         {
-            if (sinceDate == null)
-                sinceDate = DateTime.Now.Subtract(new TimeSpan(7, 0, 0, 0, 0));
+            var mappedItems = items.ToList();
+            var userIds = mappedItems.Select(x => x.UserId).ToArray();
+            var userAvatars = Services.UserService.GetUsersById(userIds)
+                .ToDictionary(x => x.Id, x => x.GetUserAvatarUrls(AppCaches.RuntimeCache));
+            var userNames = Services.UserService.GetUsersById(userIds).ToDictionary(x => x.Id, x => x.Name);
+            foreach (var item in mappedItems)
+            {
+                if (userAvatars.TryGetValue(item.UserId, out var avatars))
+                {
+                    item.UserAvatars = avatars;
+                }
+                if (userNames.TryGetValue(item.UserId, out var name))
+                {
+                    item.UserName = name;
+                }
+                
 
-            return Mapper.Map<IEnumerable<AuditLog>>(
-                Log.Instance.GetLogItems(Enum<LogTypes>.Parse(logType.ToString()), sinceDate.Value));
+            }
+            return mappedItems;
         }
-
     }
 }

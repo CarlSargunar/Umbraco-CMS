@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Diagnostics;
 using NUnit.Framework;
 using Umbraco.Core.Models;
 using Umbraco.Core.Serialization;
@@ -18,7 +19,7 @@ namespace Umbraco.Tests.Models
                 IsBidirectional = true,
                 Key = Guid.NewGuid(),
                 Name = "Test",
-                UpdateDate = DateTime.Now                
+                UpdateDate = DateTime.Now
             };
 
             var clone = (RelationType)item.DeepClone();
@@ -31,7 +32,7 @@ namespace Umbraco.Tests.Models
             Assert.AreEqual(clone.Id, item.Id);
             Assert.AreEqual(clone.Key, item.Key);
             Assert.AreEqual(clone.Name, item.Name);
-            Assert.AreNotSame(clone.ParentObjectType, item.ParentObjectType);            
+            Assert.AreNotSame(clone.ParentObjectType, item.ParentObjectType);
             Assert.AreEqual(clone.UpdateDate, item.UpdateDate);
 
             //This double verifies by reflection
@@ -59,7 +60,7 @@ namespace Umbraco.Tests.Models
 
             var result = ss.ToStream(item);
             var json = result.ResultStream.ToJsonString();
-            Console.WriteLine(json);
+            Debug.Print(json);
         }
     }
 }

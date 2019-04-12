@@ -1,17 +1,29 @@
-﻿using System.Linq;
-using System.Web.Mvc;
+﻿using System.Web.Mvc;
 using System.Web.Security;
-using umbraco.cms.businesslogic.member;
 using Umbraco.Web.Models;
 using Umbraco.Web.Mvc;
 using Umbraco.Core;
+using Umbraco.Core.Cache;
+using Umbraco.Core.Logging;
+using Umbraco.Core.Persistence;
+using Umbraco.Core.Services;
 
 namespace Umbraco.Web.Controllers
 {
     [MemberAuthorize]
     public class UmbLoginStatusController : SurfaceController
     {
+        public UmbLoginStatusController()
+        {
+        }
+
+        public UmbLoginStatusController(IUmbracoContextAccessor umbracoContextAccessor, IUmbracoDatabaseFactory databaseFactory, ServiceContext services, AppCaches appCaches, ILogger logger, IProfilingLogger profilingLogger, UmbracoHelper umbracoHelper)
+            : base(umbracoContextAccessor, databaseFactory, services, appCaches, logger, profilingLogger, umbracoHelper)
+        {
+        }
+
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public ActionResult HandleLogout([Bind(Prefix = "logoutModel")]PostRedirectModel model)
         {
             if (ModelState.IsValid == false)
@@ -33,7 +45,7 @@ namespace Umbraco.Web.Controllers
             }
 
             //redirect to current page by default
-            
+
             return RedirectToCurrentUmbracoPage();
         }
     }

@@ -1,9 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Threading.Tasks;
 using Umbraco.Core;
 using Umbraco.Core.Configuration;
 using Umbraco.Core.Logging;
+using Umbraco.Core.Migrations.Install;
 using Umbraco.Web.Install.Models;
 
 namespace Umbraco.Web.Install.InstallSteps
@@ -12,50 +14,53 @@ namespace Umbraco.Web.Install.InstallSteps
         "DatabaseInstall", 11, "")]
     internal class DatabaseInstallStep : InstallSetupStep<object>
     {
-        private readonly ApplicationContext _applicationContext;
+        private readonly DatabaseBuilder _databaseBuilder;
+        private readonly IRuntimeState _runtime;
+        private readonly ILogger _logger;
 
-        public DatabaseInstallStep(ApplicationContext applicationContext)
+        public DatabaseInstallStep(DatabaseBuilder databaseBuilder, IRuntimeState runtime, ILogger logger)
         {
-            _applicationContext = applicationContext;
+            _databaseBuilder = databaseBuilder;
+            _runtime = runtime;
+            _logger = logger;
         }
 
-        public override InstallSetupResult Execute(object model)
+        public override Task<InstallSetupResult> ExecuteAsync(object model)
         {
-            var result = _applicationContext.DatabaseContext.CreateDatabaseSchemaAndData(_applicationContext);
+            if (_runtime.Level == RuntimeLevel.Run)
+                throw new Exception("Umbraco is already configured!");
+
+            var result = _databaseBuilder.CreateSchemaAndData();
 
             if (result.Success == false)
             {
                 throw new InstallException("The database failed to install. ERROR: " + result.Message);
             }
-            
+
             if (result.RequiresUpgrade == false)
             {
-                HandleConnectionStrings();
-                return null;
+                HandleConnectionStrings(_logger);
+                return Task.FromResult<InstallSetupResult>(null);
             }
-            else
-            {
-                //upgrade is required so set the flag for the next step
 
-                return new InstallSetupResult(new Dictionary<string, object>
-                {
-                    {"upgrade", true}
-                });
-            }
-            
+            //upgrade is required so set the flag for the next step
+            return Task.FromResult(new InstallSetupResult(new Dictionary<string, object>
+            {
+                {"upgrade", true}
+            }));
         }
 
-        internal static void HandleConnectionStrings()
+        internal static void HandleConnectionStrings(ILogger logger)
         {
             // Remove legacy umbracoDbDsn configuration setting if it exists and connectionstring also exists
-            if (ConfigurationManager.ConnectionStrings[GlobalSettings.UmbracoConnectionName] != null)
+            if (ConfigurationManager.ConnectionStrings[Constants.System.UmbracoConnectionName] != null)
             {
-                GlobalSettings.RemoveSetting(GlobalSettings.UmbracoConnectionName);
+                GlobalSettings.RemoveSetting(Constants.System.UmbracoConnectionName);
             }
             else
             {
-                var ex = new ArgumentNullException(string.Format("ConfigurationManager.ConnectionStrings[{0}]", GlobalSettings.UmbracoConnectionName), "Install / upgrade did not complete successfully, umbracoDbDSN was not set in the connectionStrings section");
-                LogHelper.Error<DatabaseInstallStep>("", ex);
+                var ex = new ArgumentNullException(string.Format("ConfigurationManager.ConnectionStrings[{0}]", Constants.System.UmbracoConnectionName), "Install / upgrade did not complete successfully, umbracoDbDSN was not set in the connectionStrings section");
+                logger.Error<DatabaseInstallStep>(ex, "Install / upgrade did not complete successfully, umbracoDbDSN was not set in the connectionStrings section");
                 throw ex;
             }
         }

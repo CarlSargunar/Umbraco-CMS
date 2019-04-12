@@ -1,33 +1,19 @@
-﻿namespace Umbraco.Core.Configuration.UmbracoSettings
+﻿using System;
+
+namespace Umbraco.Core.Configuration.UmbracoSettings
 {
     public interface IUmbracoSettingsSection : IUmbracoConfigurationSection
     {
+        IBackOfficeSection BackOffice { get; }
+
         IContentSection Content { get; }
 
         ISecuritySection Security { get; }
 
         IRequestHandlerSection RequestHandler { get; }
-
-        ITemplatesSection Templates { get; }
-
-        IDeveloperSection Developer { get; }
-
-        IViewStateMoverModuleSection ViewStateMoverModule { get; }
-
+        
         ILoggingSection Logging { get; }
 
-        IScheduledTasksSection ScheduledTasks { get; }
-
-        IDistributedCallSection DistributedCall { get; }
-
-        IRepositoriesSection PackageRepositories { get; }
-
-        IProvidersSection Providers { get; }
-
-        IHelpSection Help { get; }
-
         IWebRoutingSection WebRouting { get; }
-
-        IScriptingSection Scripting { get; }
     }
 }

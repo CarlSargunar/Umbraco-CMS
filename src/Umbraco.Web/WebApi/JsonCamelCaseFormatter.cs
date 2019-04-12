@@ -2,13 +2,12 @@
 using System.Linq;
 using System.Net.Http.Formatting;
 using System.Web.Http.Controllers;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
 namespace Umbraco.Web.WebApi
 {
     /// <summary>
-    /// Applying this attribute to any webapi controller will ensure that it only contains one json formatter compatible with the angular json vulnerability prevention.
+    /// Applying this attribute to any webapi controller will ensure that it only contains one json formatter with a camelCase formatter
     /// </summary>
     public class JsonCamelCaseFormatter : Attribute, IControllerConfiguration
     {
@@ -25,10 +24,10 @@ namespace Umbraco.Web.WebApi
             {
                 SerializerSettings =
                 {
-                    ContractResolver = new CamelCasePropertyNamesContractResolver()
+                    ContractResolver = new CamelCasePropertyNamesContractResolver() 
                 }
             };
             controllerSettings.Formatters.Add(jsonFormatter);
-        }    
+        }
     }
 }

@@ -18,9 +18,10 @@ function DocumentTypesDeleteController($scope, dataTypeResource, contentTypeReso
             //get the root node before we remove it
             var rootNode = treeService.getTreeRoot($scope.currentNode);
 
-            //TODO: Need to sync tree, etc...
+            // TODO: Need to sync tree, etc...
             treeService.removeNode($scope.currentNode);
-            navigationService.hideMenu();
+            navigationService.hideMenu(); 
+
         });
 
     };
@@ -35,9 +36,10 @@ function DocumentTypesDeleteController($scope, dataTypeResource, contentTypeReso
             //get the root node before we remove it
             var rootNode = treeService.getTreeRoot($scope.currentNode);
 
-            //TODO: Need to sync tree, etc...
+            // TODO: Need to sync tree, etc...
             treeService.removeNode($scope.currentNode);
             navigationService.hideMenu();
+
         });
 
     };

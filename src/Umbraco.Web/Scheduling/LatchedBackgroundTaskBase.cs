@@ -5,59 +5,57 @@ using Umbraco.Core;
 
 namespace Umbraco.Web.Scheduling
 {
-    internal abstract class LatchedBackgroundTaskBase : DisposableObject, ILatchedBackgroundTask
+    public abstract class LatchedBackgroundTaskBase : DisposableObjectSlim, ILatchedBackgroundTask
     {
-        private readonly ManualResetEventSlim _latch;
+        private TaskCompletionSource<bool> _latch;
 
         protected LatchedBackgroundTaskBase()
         {
-            _latch = new ManualResetEventSlim(false);
+            _latch = new TaskCompletionSource<bool>();
         }
 
         /// <summary>
         /// Implements IBackgroundTask.Run().
         /// </summary>
-        public abstract void Run();
+        public virtual void Run()
+        {
+            throw new NotSupportedException("This task cannot run synchronously.");
+        }
 
         /// <summary>
         /// Implements IBackgroundTask.RunAsync().
         /// </summary>
-        public abstract Task RunAsync(CancellationToken token);
+        public virtual Task RunAsync(CancellationToken token)
+        {
+            throw new NotSupportedException("This task cannot run asynchronously.");
+        }
 
         /// <summary>
         /// Indicates whether the background task can run asynchronously.
         /// </summary>
         public abstract bool IsAsync { get; }
 
-        public WaitHandle Latch
-        {
-            get { return _latch.WaitHandle; }
-        }
+        public Task Latch => _latch.Task;
 
-        public bool IsLatched
-        {
-            get { return _latch.IsSet == false; }
-        }
+        public bool IsLatched => _latch.Task.IsCompleted == false;
 
         protected void Release()
         {
-            _latch.Set();
+            _latch.SetResult(true);
         }
 
         protected void Reset()
         {
-            _latch.Reset();
+            _latch = new TaskCompletionSource<bool>();
         }
 
-        public abstract bool RunsOnShutdown { get; }
+        public virtual bool RunsOnShutdown => false;
 
         // the task is going to be disposed after execution,
         // unless it is latched again, thus indicating it wants to
         // remain active
 
         protected override void DisposeResources()
-        {
-            _latch.Dispose();
-        }
+        { }
     }
 }

@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Security.Cryptography.X509Certificates;
 using System.Web;
+using Umbraco.Core;
+using Umbraco.Core.Configuration;
 using Umbraco.Core.IO;
 using Umbraco.Core.Services;
 using Umbraco.Web.HealthCheck.Checks.Config;
@@ -16,12 +19,16 @@ namespace Umbraco.Web.HealthCheck.Checks.Security
     public class HttpsCheck : HealthCheck
     {
         private readonly ILocalizedTextService _textService;
+        private readonly IRuntimeState _runtime;
+        private readonly IGlobalSettings _globalSettings;
 
         private const string FixHttpsSettingAction = "fixHttpsSetting";
 
-        public HttpsCheck(HealthCheckContext healthCheckContext) : base(healthCheckContext)
+        public HttpsCheck(ILocalizedTextService textService, IRuntimeState runtime, IGlobalSettings globalSettings)
         {
-            _textService = healthCheckContext.ApplicationContext.Services.TextService;
+            _textService = textService;
+            _runtime = runtime;
+            _globalSettings = globalSettings;
         }
 
         /// <summary>
@@ -53,19 +60,48 @@ namespace Umbraco.Web.HealthCheck.Checks.Security
         private HealthCheckStatus CheckForValidCertificate()
         {
             var message = string.Empty;
-            var success = false;
-            var url = HealthCheckContext.HttpContext.Request.Url;
+            StatusResultType result;
 
-            // Attempt to access the site over HTTPS to see if it HTTPS is supported 
+            // Attempt to access the site over HTTPS to see if it HTTPS is supported
             // and a valid certificate has been configured
-            var address = string.Format("https://{0}:{1}", url.Host.ToLower(), url.Port);
-            var request = (HttpWebRequest)WebRequest.Create(address);
+            var url = _runtime.ApplicationUrl.ToString().Replace("http:", "https:");
+            var request = (HttpWebRequest) WebRequest.Create(url);
             request.Method = "HEAD";
 
             try
             {
                 var response = (HttpWebResponse)request.GetResponse();
-                success = response.StatusCode == HttpStatusCode.OK;
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    // Got a valid response, check now for if certificate expiring within 14 days
+                    // Hat-tip: https://stackoverflow.com/a/15343898/489433
+                    const int NumberOfDaysForExpiryWarning = 14;
+                    var cert = request.ServicePoint.Certificate;
+                    var cert2 = new X509Certificate2(cert);
+                    var expirationDate = cert2.NotAfter;
+
+                    var daysToExpiry = (int)Math.Floor((cert2.NotAfter - DateTime.Now).TotalDays);
+                    if (daysToExpiry <= 0)
+                    {
+                        result = StatusResultType.Error;
+                        message = _textService.Localize("healthcheck/httpsCheckExpiredCertificate");
+                    }
+                    else if (daysToExpiry < NumberOfDaysForExpiryWarning)
+                    {
+                        result = StatusResultType.Warning;
+                        message = _textService.Localize("healthcheck/httpsCheckExpiringCertificate", new[] { daysToExpiry.ToString() });
+                    }
+                    else
+                    {
+                        result = StatusResultType.Success;
+                        message = _textService.Localize("healthcheck/httpsCheckValidCertificate");
+                    }
+                }
+                else
+                {
+                    result = StatusResultType.Error;
+                    message = _textService.Localize("healthcheck/healthCheckInvalidUrl", new[] { url, response.StatusDescription });
+                }
             }
             catch (Exception ex)
             {
@@ -74,12 +110,14 @@ namespace Umbraco.Web.HealthCheck.Checks.Security
                 {
                     message = exception.Status == WebExceptionStatus.TrustFailure
                         ? _textService.Localize("healthcheck/httpsCheckInvalidCertificate", new [] { exception.Message })
-                        : _textService.Localize("healthcheck/httpsCheckInvalidUrl", new [] { address, exception.Message });
+                        : _textService.Localize("healthcheck/healthCheckInvalidUrl", new [] { url, exception.Message });
                 }
                 else
                 {
-                    message = _textService.Localize("healthcheck/httpsCheckInvalidUrl", new[] { address, ex.Message });
+                    message = _textService.Localize("healthcheck/healthCheckInvalidUrl", new[] { url, ex.Message });
                 }
+
+                result = StatusResultType.Error;
             }
 
             var actions = new List<HealthCheckAction>();
@@ -87,14 +125,14 @@ namespace Umbraco.Web.HealthCheck.Checks.Security
             return
                 new HealthCheckStatus(message)
                 {
-                    ResultType = success ? StatusResultType.Success : StatusResultType.Error,
+                    ResultType = result,
                     Actions = actions
                 };
         }
 
         private HealthCheckStatus CheckIfCurrentSchemeIsHttps()
         {
-            var uri = HttpContext.Current.Request.Url;
+            var uri = _runtime.ApplicationUrl;
             var success = uri.Scheme == "https";
 
             var actions = new List<HealthCheckAction>();
@@ -109,8 +147,8 @@ namespace Umbraco.Web.HealthCheck.Checks.Security
 
         private HealthCheckStatus CheckHttpsConfigurationSetting()
         {
-            var httpsSettingEnabled = Core.Configuration.GlobalSettings.UseSSL;
-            var uri = HttpContext.Current.Request.Url;
+            var httpsSettingEnabled = _globalSettings.UseHttps;
+            var uri = _runtime.ApplicationUrl;
             var actions = new List<HealthCheckAction>();
 
             string resultMessage;
@@ -133,7 +171,7 @@ namespace Umbraco.Web.HealthCheck.Checks.Security
                     new[] {httpsSettingEnabled.ToString(), httpsSettingEnabled ? string.Empty : "not"});
                 resultType = httpsSettingEnabled ? StatusResultType.Success: StatusResultType.Error;
             }
-            
+
             return
                 new HealthCheckStatus(resultMessage)
                 {
@@ -145,8 +183,8 @@ namespace Umbraco.Web.HealthCheck.Checks.Security
         private HealthCheckStatus FixHttpsSetting()
         {
             var configFile = IOHelper.MapPath("~/Web.config");
-            const string xPath = "/configuration/appSettings/add[@key='umbracoUseSSL']/@value";
-            var configurationService = new ConfigurationService(configFile, xPath);
+            const string xPath = "/configuration/appSettings/add[@key='Umbraco.Core.UseHttps']/@value";
+            var configurationService = new ConfigurationService(configFile, xPath, _textService);
             var updateConfigFile = configurationService.UpdateConfigFile("true");
 
             if (updateConfigFile.Success)

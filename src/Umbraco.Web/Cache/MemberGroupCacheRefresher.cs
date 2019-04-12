@@ -1,119 +1,83 @@
-using System;
+﻿using System;
 using System.Linq;
-using System.Web.Script.Serialization;
-using Umbraco.Core;
+using Newtonsoft.Json;
 using Umbraco.Core.Cache;
 using Umbraco.Core.Models;
-
-using Umbraco.Core.Persistence.Repositories;
 
 namespace Umbraco.Web.Cache
 {
     public sealed class MemberGroupCacheRefresher : JsonCacheRefresherBase<MemberGroupCacheRefresher>
     {
-        #region Static helpers
+        public MemberGroupCacheRefresher(AppCaches appCaches)
+            : base(appCaches)
+        { }
 
-        /// <summary>
-        /// Converts the json to a JsonPayload object
-        /// </summary>
-        /// <param name="json"></param>
-        /// <returns></returns>
-        private static JsonPayload[] DeserializeFromJsonPayload(string json)
-        {
-            var serializer = new JavaScriptSerializer();
-            var jsonObject = serializer.Deserialize<JsonPayload[]>(json);
-            return jsonObject;
-        }
+        #region Define
 
-        /// <summary>
-        /// Creates the custom Json payload used to refresh cache amongst the servers
-        /// </summary>
-        /// <param name="groups"></param>
-        /// <returns></returns>
-        internal static string SerializeToJsonPayload(params IMemberGroup[] groups)
-        {
-            var serializer = new JavaScriptSerializer();
-            var items = groups.Select(FromMemberGroup).ToArray();
-            var json = serializer.Serialize(items);
-            return json;
-        }
+        protected override MemberGroupCacheRefresher This => this;
 
-        /// <summary>
-        /// Converts a macro to a jsonPayload object
-        /// </summary>
-        /// <param name="group"></param>
-        /// <returns></returns>
-        private static JsonPayload FromMemberGroup(IMemberGroup group)
-        {
-            if (group == null) return null;
+        public static readonly Guid UniqueId = Guid.Parse("187F236B-BD21-4C85-8A7C-29FBA3D6C00C");
 
-            var payload = new JsonPayload
-            {
-                Id = group.Id,
-                Name = group.Name
-            };
-            return payload;
-        }
+        public override Guid RefresherUniqueId => UniqueId;
+
+        public override string Name => "Member Group Cache Refresher";
 
         #endregion
 
-        #region Sub classes
+        #region Refresher
 
-        private class JsonPayload
+        public override void Refresh(string json)
         {
-            public string Name { get; set; }
-            public int Id { get; set; }
-        }
-
-        #endregion
-
-        protected override MemberGroupCacheRefresher Instance
-        {
-            get { return this; }
-        }
-
-        public override Guid UniqueIdentifier
-        {
-            get { return new Guid(DistributedCache.MemberGroupCacheRefresherId); }
-        }
-
-        public override string Name
-        {
-            get { return "Clears Member Group Cache"; }
-        }
-
-        public override void Refresh(string jsonPayload)
-        {
-            ClearCache(DeserializeFromJsonPayload(jsonPayload));
-            base.Refresh(jsonPayload);
+            ClearCache();
+            base.Refresh(json);
         }
 
         public override void Refresh(int id)
         {
-            ClearCache(FromMemberGroup(ApplicationContext.Current.Services.MemberGroupService.GetById(id)));
+            ClearCache();
             base.Refresh(id);
         }
 
         public override void Remove(int id)
         {
-            ClearCache(FromMemberGroup(ApplicationContext.Current.Services.MemberGroupService.GetById(id)));
+            ClearCache();
             base.Remove(id);
         }
 
-        private void ClearCache(params JsonPayload[] payloads)
+        private void ClearCache()
         {
-            if (payloads == null) return;
-
-            var memberGroupCache = ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.GetCache<IMemberGroup>();
-            payloads.ForEach(payload =>
-            {
-                if (payload != null && memberGroupCache)
-                {
-                    memberGroupCache.Result.ClearCacheByKeySearch(string.Format("{0}.{1}", typeof(IMemberGroup).FullName, payload.Name));
-                    memberGroupCache.Result.ClearCacheItem(RepositoryBase.GetCacheIdKey<IMemberGroup>(payload.Id));
-                }                
-            });
-            
+            // Since we cache by group name, it could be problematic when renaming to
+            // previously existing names - see http://issues.umbraco.org/issue/U4-10846.
+            // To work around this, just clear all the cache items
+            AppCaches.IsolatedCaches.ClearCache<IMemberGroup>();
         }
+
+        #endregion
+
+        #region Json
+
+        public class JsonPayload
+        {
+            public JsonPayload(int id, string name)
+            {
+                Id = id;
+                Name = name;
+            }
+
+            public string Name { get; }
+            public int Id { get; }
+        }
+
+        private JsonPayload[] Deserialize(string json)
+        {
+            return JsonConvert.DeserializeObject<JsonPayload[]>(json);
+        }
+
+        internal static string Serialize(params IMemberGroup[] groups)
+        {
+            return JsonConvert.SerializeObject(groups.Select(x => new JsonPayload(x.Id, x.Name)).ToArray());
+        }
+
+        #endregion
     }
 }

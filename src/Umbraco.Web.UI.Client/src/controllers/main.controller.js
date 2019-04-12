@@ -8,59 +8,62 @@
  * The main application controller
  * 
  */
-function MainController($scope, $rootScope, $location, $routeParams, $timeout, $http, $log, appState, treeService, notificationsService, userService, navigationService, historyService, updateChecker, assetsService, eventsService, umbRequestHelper, tmhDynamicLocale) {
+function MainController($scope, $location, appState, treeService, notificationsService, userService, historyService, updateChecker, assetsService, eventsService, tmhDynamicLocale, localStorageService, editorService, overlayService) {
 
     //the null is important because we do an explicit bool check on this in the view
-    //the avatar is by default the umbraco logo    
     $scope.authenticated = null;
-    $scope.avatar = [
-        { value: "assets/img/application/logo.png" },
-        { value: "assets/img/application/logo@2x.png" },
-        { value: "assets/img/application/logo@3x.png" }
-    ];
     $scope.touchDevice = appState.getGlobalState("touchDevice");
-
-
+    $scope.infiniteMode = false;
+    $scope.overlay = {};
+    $scope.drawer = {};
+    $scope.search = {};
+    $scope.login = {};
+    
     $scope.removeNotification = function (index) {
         notificationsService.remove(index);
     };
 
-    $scope.closeDialogs = function (event) {
-        //only close dialogs if non-link and non-buttons are clicked
-        var el = event.target.nodeName;
-        var els = ["INPUT", "A", "BUTTON"];
+    $scope.closeSearch = function() {
+        appState.setSearchState("show", false);
+    };
 
-        if (els.indexOf(el) >= 0) { return; }
+    $scope.showLoginScreen = function(isTimedOut) {
+        $scope.login.isTimedOut = isTimedOut;
+        $scope.login.show = true;
+    };
 
-        var parents = $(event.target).parents("a,button");
-        if (parents.length > 0) {
-            return;
-        }
-
-        //SD: I've updated this so that we don't close the dialog when clicking inside of the dialog
-        var nav = $(event.target).parents("#dialog");
-        if (nav.length === 1) {
-            return;
-        }
-
-        eventsService.emit("app.closeDialogs", event);
+    $scope.hideLoginScreen = function() {
+        $scope.login.show = false;
     };
 
     var evts = [];
-
+    
     //when a user logs out or timesout
-    evts.push(eventsService.on("app.notAuthenticated", function () {
+    evts.push(eventsService.on("app.notAuthenticated", function (evt, data) {
         $scope.authenticated = null;
         $scope.user = null;
+        const isTimedOut = data && data.isTimedOut ? true : false;
+        $scope.showLoginScreen(isTimedOut);
     }));
 
-    //when the app is read/user is logged in, setup the data
+    evts.push(eventsService.on("app.userRefresh", function(evt) {
+        userService.refreshCurrentUser().then(function(data) {
+            $scope.user = data;
+
+            //Load locale file
+            if ($scope.user.locale) {
+                tmhDynamicLocale.set($scope.user.locale);
+            }
+        });
+    }));
+
+    //when the app is ready/user is logged in, setup the data
     evts.push(eventsService.on("app.ready", function (evt, data) {
 
         $scope.authenticated = data.authenticated;
         $scope.user = data.user;
 
-        updateChecker.check().then(function(update) {
+        updateChecker.check().then(function (update) {
             if (update && update !== "null") {
                 if (update.type !== "None") {
                     var notification = {
@@ -81,6 +84,16 @@ function MainController($scope, $rootScope, $location, $routeParams, $timeout, $
             $location.path("/").search("");
             historyService.removeAll();
             treeService.clearCache();
+            editorService.closeAll();
+            overlayService.close();
+
+            //if the user changed, clearout local storage too - could contain sensitive data
+            localStorageService.clearAll();
+        }
+
+        //if this is a new login (i.e. the user entered credentials), then clear out local storage - could contain sensitive data
+        if (data.loginType === "credentials") {
+            localStorageService.clearAll();
         }
 
         //Load locale file
@@ -88,44 +101,63 @@ function MainController($scope, $rootScope, $location, $routeParams, $timeout, $
             tmhDynamicLocale.set($scope.user.locale);
         }
 
-        if ($scope.user.emailHash) {
+    }));
 
-            //let's attempt to load the avatar, it might not exist or we might not have 
-            // internet access, well get an empty string back
-            $http.get(umbRequestHelper.getApiUrl("gravatarApiBaseUrl", "GetCurrentUserGravatarUrl"))
-                .then(
-                    function successCallback(response) {
-                        // if we can't download the gravatar for some reason, an null gets returned, we cannot do anything
-                        if (response.data !== "null") {
-                            $("#avatar-img").fadeTo(1000, 0, function () {
-                                $scope.$apply(function () {
-                                    //this can be null if they time out
-                                    if ($scope.user && $scope.user.emailHash) {
-                                        var avatarBaseUrl = "https://www.gravatar.com/avatar/",
-                                            hash = $scope.user.emailHash;
-
-                                        $scope.avatar = [
-                                            { value: avatarBaseUrl + hash + ".jpg?s=30&d=mm" },
-                                            { value: avatarBaseUrl + hash + ".jpg?s=60&d=mm" },
-                                            { value: avatarBaseUrl + hash + ".jpg?s=90&d=mm" }
-                                        ];
-                                    }
-                                });
-                                $("#avatar-img").fadeTo(1000, 1);
-                            });
-                        }
-                    }, function errorCallback(response) {
-                        //cannot load it from the server so we cannot do anything
-                    });
+    // events for search
+    evts.push(eventsService.on("appState.searchState.changed", function (e, args) {
+        if (args.key === "show") {
+            $scope.search.show = args.value;
         }
     }));
 
-    evts.push(eventsService.on("app.ysod", function (name, error) {
-        $scope.ysodOverlay = {
-            view: "ysod",
-            error: error,
-            show: true
-        };
+    // events for drawer
+    // manage the help dialog by subscribing to the showHelp appState
+    evts.push(eventsService.on("appState.drawerState.changed", function (e, args) {
+        // set view
+        if (args.key === "view") {
+            $scope.drawer.view = args.value;
+        }
+        // set custom model
+        if (args.key === "model") {
+            $scope.drawer.model = args.value;
+        }
+        // show / hide drawer
+        if (args.key === "showDrawer") {
+            $scope.drawer.show = args.value;
+        }
+    }));
+
+    // events for overlays
+    evts.push(eventsService.on("appState.overlay", function (name, args) {
+        $scope.overlay = args;
+    }));
+    
+    // events for tours
+    evts.push(eventsService.on("appState.tour.start", function (name, args) {
+        $scope.tour = args;
+        $scope.tour.show = true;
+    }));
+
+    evts.push(eventsService.on("appState.tour.end", function () {
+        $scope.tour = null;
+    }));
+
+    evts.push(eventsService.on("appState.tour.complete", function () {
+        $scope.tour = null;
+    }));
+
+    // events for backdrop
+    evts.push(eventsService.on("appState.backdrop", function (name, args) {
+        $scope.backdrop = args;
+    }));
+
+    // event for infinite editors
+    evts.push(eventsService.on("appState.editors.open", function (name, args) {
+        $scope.infiniteMode = args && args.editors.length > 0 ? true : false;
+    }));
+
+    evts.push(eventsService.on("appState.editors.close", function (name, args) {
+        $scope.infiniteMode = args && args.editors.length > 0 ? true : false;
     }));
 
     //ensure to unregister from all events!
@@ -140,7 +172,7 @@ function MainController($scope, $rootScope, $location, $routeParams, $timeout, $
 
 //register it
 angular.module('umbraco').controller("Umbraco.MainController", MainController).
-        config(function (tmhDynamicLocaleProvider) {
-            //Set url for locale files
-            tmhDynamicLocaleProvider.localeLocationPattern('lib/angular/1.1.5/i18n/angular-locale_{{locale}}.js');
-        });
+    config(function (tmhDynamicLocaleProvider) {
+        //Set url for locale files
+        tmhDynamicLocaleProvider.localeLocationPattern('lib/angular-i18n/angular-locale_{{locale}}.js');
+    });

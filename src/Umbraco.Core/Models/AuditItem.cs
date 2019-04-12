@@ -1,19 +1,39 @@
-﻿using Umbraco.Core.Models.EntityBase;
+﻿using Umbraco.Core.Models.Entities;
 
 namespace Umbraco.Core.Models
 {
-    public sealed class AuditItem : Entity, IAggregateRoot
+    public sealed class AuditItem : EntityBase, IAuditItem
     {
-        public AuditItem(int objectId, string comment, AuditType type, int userId)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AuditItem"/> class.
+        /// </summary>
+        public AuditItem(int objectId, AuditType type, int userId, string entityType, string comment = null, string parameters = null)
         {
+            DisableChangeTracking();
+
             Id = objectId;
             Comment = comment;
             AuditType = type;
             UserId = userId;
+            EntityType = entityType;
+            Parameters = parameters;
+
+            EnableChangeTracking();
         }
 
-        public string Comment { get; private set; }
-        public AuditType AuditType { get; private set; }
-        public int UserId { get; private set; }
+        /// <inheritdoc/>
+        public AuditType AuditType { get; }
+
+        /// <inheritdoc/>
+        public string EntityType { get; }
+
+        /// <inheritdoc/>
+        public int UserId { get; }
+
+        /// <inheritdoc/>
+        public string Comment { get; }
+
+        /// <inheritdoc/>
+        public string Parameters { get; }
     }
 }

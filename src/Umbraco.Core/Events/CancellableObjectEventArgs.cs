@@ -1,52 +1,46 @@
-using System.Collections.Generic;
-using System.Security.Permissions;
-using Umbraco.Core.Models;
-using Umbraco.Core.Models.EntityBase;
+﻿using System.Collections.Generic;
 
 namespace Umbraco.Core.Events
 {
-	/// <summary>
-	/// Event args for a strongly typed object that can support cancellation
-	/// </summary>
-	/// <typeparam name="T"></typeparam>
-	[HostProtection(SecurityAction.LinkDemand, SharedState = true)]
-	public class CancellableObjectEventArgs<T> : CancellableEventArgs
-	{
-	    public CancellableObjectEventArgs(T eventObject, bool canCancel, EventMessages messages, IDictionary<string, object> additionalData)
+    /// <summary>
+    /// Provides a base class for classes representing event data, for events that support cancellation, and expose an impacted object.
+    /// </summary>
+    public abstract class CancellableObjectEventArgs : CancellableEventArgs
+    {
+        protected CancellableObjectEventArgs(object eventObject, bool canCancel, EventMessages messages, IDictionary<string, object> additionalData)
             : base(canCancel, messages, additionalData)
-	    {
+        {
             EventObject = eventObject;
         }
 
-	    public CancellableObjectEventArgs(T eventObject, bool canCancel, EventMessages eventMessages)
+        protected CancellableObjectEventArgs(object eventObject, bool canCancel, EventMessages eventMessages)
             : base(canCancel, eventMessages)
         {
             EventObject = eventObject;
         }
 
-        public CancellableObjectEventArgs(T eventObject, EventMessages eventMessages)
+        protected CancellableObjectEventArgs(object eventObject, EventMessages eventMessages)
             : this(eventObject, true, eventMessages)
         {
         }
 
-        public CancellableObjectEventArgs(T eventObject, bool canCancel)
-			: base(canCancel)
-		{
-			EventObject = eventObject;
-		}
+        protected CancellableObjectEventArgs(object eventObject, bool canCancel)
+            : base(canCancel)
+        {
+            EventObject = eventObject;
+        }
 
-		public CancellableObjectEventArgs(T eventObject)
-			: this(eventObject, true)
-		{
-		}
+        protected CancellableObjectEventArgs(object eventObject)
+            : this(eventObject, true)
+        {
+        }
 
-		/// <summary>
-		/// Returns the object relating to the event
-		/// </summary>
-		/// <remarks>
-		/// This is protected so that inheritors can expose it with their own name
-		/// </remarks>
-		protected T EventObject { get; set; }
-
-	}
+        /// <summary>
+        /// Gets or sets the impacted object.
+        /// </summary>
+        /// <remarks>
+        /// This is protected so that inheritors can expose it with their own name
+        /// </remarks>
+        internal object EventObject { get; set; }
+    }
 }

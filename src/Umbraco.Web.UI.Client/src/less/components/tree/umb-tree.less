@@ -1,0 +1,305 @@
+// Tree
+// -------------------------
+.umb-tree {
+    margin: 0;
+    min-width: 100%;
+    width: auto;
+    padding: 0 0 20px;
+    list-style-type: none;
+    
+    * {
+        white-space: nowrap;
+    }
+
+    a, a:hover {
+        outline: none;
+        text-decoration: none;
+    }
+
+    ins {
+        margin: -4px 0 0 -16px;
+        width: 16px;
+        height: 16px;
+        visibility: hidden;
+        text-decoration: none;
+        font-size: 12px;
+        transition: color 120ms;
+
+        &:hover {
+            color: @ui-option-type-hover;
+        }
+    }
+
+    i.noSpr {
+        display: inline-block;
+        margin-top: 1px;
+        width: 16px;
+        height: 16px;
+        line-height: 16px;
+    }
+
+    ul {
+        padding: 0;
+        margin: 0;
+        min-width: 100%;
+        width: 100%;
+
+        &.collapsed {
+            display: none;
+        }
+    }
+    
+    //loader defaults
+    .umb-loader {
+        height: 10px;
+        margin: 10px 10px 10px 10px;
+    }
+
+    .search-subtitle {
+        color: @gray-7;
+        display: block;
+        padding-left: 35px;
+    }
+}
+
+body.touch .umb-tree {
+    ins {
+        font-size: 14px;
+        visibility: visible;
+        padding: 7px;
+    }
+
+    .umb-tree-item > .umb-tree-item__inner {
+        padding-top: 8px;
+        padding-bottom: 8px;
+        font-size: 110%;
+    } 
+    
+    // change height of this if touch devices should have a different height of preloader.
+    .umb-tree-item .l div {
+        padding: 0;
+    }
+}
+
+.umb-tree-root, .umb-tree-item__inner {
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    
+    border:2px solid transparent;
+    
+    color: @ui-option-type;
+    a {
+        color: @ui-option-type;
+    }
+    
+    &:hover {
+        background: @ui-option-hover;
+        
+        color: @ui-option-type-hover;
+        a {
+            color: @ui-option-type-hover;
+        }
+        
+        > .umb-options {
+            visibility: visible;
+        }
+        
+        .umb-tree-icon {
+            color: @ui-option-type-hover;
+        }
+    }
+}
+
+.umb-tree-header {
+    display: flex;
+    padding: 20px 0 20px 20px;
+    box-sizing: border-box;
+    color: @gray-2;
+    font-weight: bold;
+    font-size: 15px;
+}
+
+.umb-tree-icon,
+.umb-tree-node-search {
+    cursor: pointer;
+}
+
+.umb-tree .umb-search-group {
+    position: inherit;
+    display: inherit;
+
+    list-style: none;
+
+    h6 {
+        padding: 10px 0 10px 20px;
+        font-weight: inherit;
+        background: @gray-10;
+        font-size: 14px;
+    }
+
+    &:hover {
+        background: inherit;
+    }
+
+    &-item {
+        padding: 4px 0;
+
+        &:hover {
+            background-color: @gray-10;
+        }
+
+        &-link {
+            display: block;
+        }
+    }
+
+    &-link {
+        display: flex;
+        flex-wrap: wrap;
+        flex-direction: column;
+        font-weight: normal !important;
+    }
+}
+
+.umb-tree .umb-tree-node-checked > .umb-tree-item__inner > i[class^="icon-"],
+.umb-tree .umb-tree-node-checked > .umb-tree-item__inner > i[class*=" icon-"],
+.umb-tree .umb-tree-node-checked .umb-search-group-item-name > i[class^="icon-"],
+.umb-tree .umb-tree-node-checked .umb-search-group-item-name > i[class*=" icon-"] {
+    font-family: 'icomoon' !important;
+    color: @green !important;
+
+    &::before {
+        content: "\e165" !important;
+        font-family: inherit;
+    }
+}
+
+.umb-options {
+    visibility: hidden;
+    display: flex;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    padding: 9px 5px;
+    text-align: center;
+    margin: 0 10px 0 auto;
+    cursor: pointer;
+    border-radius: @baseBorderRadius;
+
+    &:hover {
+        background: @btnBackgroundHighlight;
+    }
+
+    i {
+        height: 5px !important;
+        width: 5px !important;
+        border-radius: 20px;
+        background: @black;
+        display: inline-block;
+        margin: 0 2px 0 0;
+
+        &:last-child {
+            margin: 0;
+        }
+    }
+
+    .hide-options & {
+        display: none !important;
+    }
+}
+
+
+// Tree item states
+// -------------------------
+.not-published {
+    > .umb-tree-item__inner > i.icon,
+    > .umb-tree-item__inner > a {
+        opacity: 0.6;
+    }
+}
+
+.not-allowed {
+    > .umb-tree-item__inner > i.icon,
+    > .umb-tree-item__inner > a {
+        cursor: not-allowed;
+    }
+}
+
+.umb-tree-item__annotation {
+    &::before {
+        font-family: 'icomoon';
+        position: absolute;
+        bottom: 0;
+    }
+}
+
+.has-unpublished-version > .umb-tree-item__inner > .umb-tree-item__annotation::before {
+    content: "\e25a";
+    color: @green;
+    font-size: 20px;
+    margin-left: -25px;
+}
+
+.is-container > .umb-tree-item__inner > .umb-tree-item__annotation::before {
+    content: "\e04e";
+    color: @blue;
+    font-size: 9px;
+    margin-left: -20px;
+}
+
+.protected > .umb-tree-item__inner > .umb-tree-item__annotation::before {
+    content: "\e256";
+    color: @red;
+    font-size: 20px;
+    margin-left: -25px;
+}
+
+.locked > .umb-tree-item__inner > .umb-tree-item__annotation::before {
+    content: "\e0a7";
+    color: @red;
+    font-size: 9px;
+    margin-left: -20px;
+}
+
+.no-access {
+    .umb-tree-icon,
+    .root-link,
+    .umb-tree-item__label {
+        color: @gray-7;
+        cursor: not-allowed;
+    }
+}
+
+
+// Tree icons
+// -------------------------
+.umb-tree-icon { 
+    vertical-align: middle;
+    margin: 0 13px 0 0;
+    //color: @gray-1;
+    color: @ui-option-type;
+    font-size: 20px;   
+    
+    &.blue {
+        color: @blue;
+    }
+
+    &.green {
+        color: @green;
+    }
+
+    &.purple {
+        color: @purple;
+    }
+
+    &.orange {
+        color: @orange;
+    }
+
+    &.red {
+        color: @red;
+    }
+}

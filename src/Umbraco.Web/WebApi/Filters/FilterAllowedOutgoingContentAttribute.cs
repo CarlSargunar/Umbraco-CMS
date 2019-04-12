@@ -3,50 +3,82 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Reflection;
 using Umbraco.Core.Models.Membership;
 using Umbraco.Core.Services;
-using umbraco.BusinessLogic.Actions;
 using Umbraco.Core;
+using Umbraco.Web.Composing;
+using Umbraco.Core.Models;
+using Umbraco.Web.Actions;
+
 
 namespace Umbraco.Web.WebApi.Filters
 {
     /// <summary>
-    /// This inspects the result of the action that returns a collection of content and removes 
+    /// This inspects the result of the action that returns a collection of content and removes
     /// any item that the current user doesn't have access to
     /// </summary>
     internal sealed class FilterAllowedOutgoingContentAttribute : FilterAllowedOutgoingMediaAttribute
     {
+        private readonly IUserService _userService;
+        private readonly IEntityService _entityService;
         private readonly char _permissionToCheck;
 
-        public FilterAllowedOutgoingContentAttribute(Type outgoingType) 
-            : base(outgoingType)
+        public FilterAllowedOutgoingContentAttribute(Type outgoingType)
+            : this(outgoingType, Current.Services.UserService, Current.Services.EntityService)
         {
-            _permissionToCheck = ActionBrowse.Instance.Letter;
+            _permissionToCheck = ActionBrowse.ActionLetter;
         }
 
         public FilterAllowedOutgoingContentAttribute(Type outgoingType, char permissionToCheck)
-            : base(outgoingType)
+            : this(outgoingType, Current.Services.UserService, Current.Services.EntityService)
         {
             _permissionToCheck = permissionToCheck;
         }
 
         public FilterAllowedOutgoingContentAttribute(Type outgoingType, string propertyName)
+            : this(outgoingType, propertyName, Current.Services.UserService, Current.Services.EntityService)
+        {
+            _permissionToCheck = ActionBrowse.ActionLetter;
+        }
+
+        public FilterAllowedOutgoingContentAttribute(Type outgoingType, IUserService userService, IEntityService entityService)
+            : base(outgoingType)
+        {
+            _userService = userService ?? throw new ArgumentNullException(nameof(userService));
+            _entityService = entityService ?? throw new ArgumentNullException(nameof(entityService));
+            _permissionToCheck = ActionBrowse.ActionLetter;
+        }
+
+        public FilterAllowedOutgoingContentAttribute(Type outgoingType, char permissionToCheck, IUserService userService, IEntityService entityService)
+            : base(outgoingType)
+        {
+            _userService = userService ?? throw new ArgumentNullException(nameof(userService));
+            _entityService = entityService ?? throw new ArgumentNullException(nameof(entityService));
+            _userService = userService;
+            _entityService = entityService;
+            _permissionToCheck = permissionToCheck;
+        }
+
+        public FilterAllowedOutgoingContentAttribute(Type outgoingType, string propertyName, IUserService userService, IEntityService entityService)
             : base(outgoingType, propertyName)
         {
-            _permissionToCheck = ActionBrowse.Instance.Letter;
+            _userService = userService ?? throw new ArgumentNullException(nameof(userService));
+            _entityService = entityService ?? throw new ArgumentNullException(nameof(entityService));
+            _userService = userService;
+            _entityService = entityService;
+            _permissionToCheck = ActionBrowse.ActionLetter;
         }
 
         protected override void FilterItems(IUser user, IList items)
         {
             base.FilterItems(user, items);
 
-            FilterBasedOnPermissions(items, user, ApplicationContext.Current.Services.UserService);
+            FilterBasedOnPermissions(items, user);
         }
 
-        protected override int GetUserStartNode(IUser user)
+        protected override int[] GetUserStartNodes(IUser user)
         {
-            return user.StartContentId;
+            return user.CalculateContentStartNodeIds(_entityService);
         }
 
         protected override int RecycleBinId
@@ -54,7 +86,7 @@ namespace Umbraco.Web.WebApi.Filters
             get { return Constants.System.RecycleBinContent; }
         }
 
-        internal void FilterBasedOnPermissions(IList items, IUser user, IUserService userService)
+        internal void FilterBasedOnPermissions(IList items, IUser user)
         {
             var length = items.Count;
 
@@ -66,30 +98,19 @@ namespace Umbraco.Web.WebApi.Filters
                     ids.Add(((dynamic)items[i]).Id);
                 }
                 //get all the permissions for these nodes in one call
-                var permissions = userService.GetPermissions(user, ids.ToArray()).ToArray();
+                var permissions = _userService.GetPermissions(user, ids.ToArray());
                 var toRemove = new List<dynamic>();
                 foreach (dynamic item in items)
                 {
-                    var nodePermission = permissions.Where(x => x.EntityId == Convert.ToInt32(item.Id)).ToArray();
-                    //if there are no permissions for this id then we need to check what the user's default
-                    // permissions are.
-                    if (nodePermission.Any() == false)
-                    {
-                        //var defaultP = user.DefaultPermissions
+                    //get the combined permission set across all user groups for this node
+                    //we're in the world of dynamics here so we need to cast
+                    var nodePermission = ((IEnumerable<string>)permissions.GetAllPermissions(item.Id)).ToArray();
 
-                        toRemove.Add(item);
-                    }
-                    else
+                    //if the permission being checked doesn't exist then remove the item
+                    if (nodePermission.Contains(_permissionToCheck.ToString(CultureInfo.InvariantCulture)) == false)
                     {
-                        foreach (var n in nodePermission)
-                        {
-                            //if the permission being checked doesn't exist then remove the item
-                            if (n.AssignedPermissions.Contains(_permissionToCheck.ToString(CultureInfo.InvariantCulture)) == false)
-                            {
-                                toRemove.Add(item);
-                            }
-                        }
-                    }
+                        toRemove.Add(item);
+                    }                    
                 }
                 foreach (var item in toRemove)
                 {

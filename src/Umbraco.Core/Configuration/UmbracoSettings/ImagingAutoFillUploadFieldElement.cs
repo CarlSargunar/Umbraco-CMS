@@ -2,7 +2,7 @@
 
 namespace Umbraco.Core.Configuration.UmbracoSettings
 {
-    internal class ImagingAutoFillUploadFieldElement : ConfigurationElement, IImagingAutoFillUploadField
+    internal class ImagingAutoFillUploadFieldElement : UmbracoConfigurationElement, IImagingAutoFillUploadField
     {
         /// <summary>
         /// Allow setting internally so we can create a default
@@ -10,82 +10,30 @@ namespace Umbraco.Core.Configuration.UmbracoSettings
         [ConfigurationProperty("alias", IsKey = true, IsRequired = true)]
         public string Alias
         {
-            get { return (string)this["alias"]; }
-            set { this["alias"] = value; }
+            get => (string)this["alias"];
+            set => this["alias"] = value;
         }
 
         [ConfigurationProperty("widthFieldAlias")]
-        internal InnerTextConfigurationElement<string> WidthFieldAlias
-        {
-            get
-            {
-                return new OptionalInnerTextConfigurationElement<string>(
-                       (InnerTextConfigurationElement<string>)this["widthFieldAlias"],
-                    //set the default
-                       "umbracoWidth");
-            }
-        }
+        internal InnerTextConfigurationElement<string> WidthFieldAlias => GetOptionalTextElement("widthFieldAlias", "umbracoWidth");
 
         [ConfigurationProperty("heightFieldAlias")]
-        internal InnerTextConfigurationElement<string> HeightFieldAlias
-        {
-            get
-            {
-                return new OptionalInnerTextConfigurationElement<string>(
-                       (InnerTextConfigurationElement<string>)this["heightFieldAlias"],
-                    //set the default
-                       "umbracoHeight");
-            }
-        }
+        internal InnerTextConfigurationElement<string> HeightFieldAlias => GetOptionalTextElement("heightFieldAlias", "umbracoHeight");
 
         [ConfigurationProperty("lengthFieldAlias")]
-        internal InnerTextConfigurationElement<string> LengthFieldAlias
-        {
-            get
-            {
-                return new OptionalInnerTextConfigurationElement<string>(
-                       (InnerTextConfigurationElement<string>)this["lengthFieldAlias"],
-                    //set the default
-                       "umbracoBytes");
-            }
-        }
+        internal InnerTextConfigurationElement<string> LengthFieldAlias => GetOptionalTextElement("lengthFieldAlias", "umbracoBytes");
 
         [ConfigurationProperty("extensionFieldAlias")]
-        internal InnerTextConfigurationElement<string> ExtensionFieldAlias
-        {
-            get
-            {
-                return new OptionalInnerTextConfigurationElement<string>(
-                       (InnerTextConfigurationElement<string>)this["extensionFieldAlias"],
-                    //set the default
-                       "umbracoExtension");
-            }
-        }
+        internal InnerTextConfigurationElement<string> ExtensionFieldAlias => GetOptionalTextElement("extensionFieldAlias", "umbracoExtension");
 
-        string IImagingAutoFillUploadField.Alias
-        {
-            get { return Alias; }
-            
-        }
+        string IImagingAutoFillUploadField.Alias => Alias;
 
-        string IImagingAutoFillUploadField.WidthFieldAlias
-        {
-            get { return WidthFieldAlias; }
-        }
+        string IImagingAutoFillUploadField.WidthFieldAlias => WidthFieldAlias;
 
-        string IImagingAutoFillUploadField.HeightFieldAlias
-        {
-            get { return HeightFieldAlias; }
-        }
+        string IImagingAutoFillUploadField.HeightFieldAlias => HeightFieldAlias;
 
-        string IImagingAutoFillUploadField.LengthFieldAlias
-        {
-            get { return LengthFieldAlias; }
-        }
+        string IImagingAutoFillUploadField.LengthFieldAlias => LengthFieldAlias;
 
-        string IImagingAutoFillUploadField.ExtensionFieldAlias
-        {
-            get { return ExtensionFieldAlias; }
-        }
+        string IImagingAutoFillUploadField.ExtensionFieldAlias => ExtensionFieldAlias;
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Web.Hosting;
 
 namespace Umbraco.Web.Scheduling
@@ -8,13 +8,13 @@ namespace Umbraco.Web.Scheduling
     /// </summary>
     /// <typeparam name="T">The type of the managed tasks.</typeparam>
     /// <remarks>The interface is not complete and exists only to have the contravariance on T.</remarks>
-    internal interface IBackgroundTaskRunner<in T> : IDisposable, IRegisteredObject
+    public interface IBackgroundTaskRunner<in T> : IDisposable, IRegisteredObject
         where T : class, IBackgroundTask
     {
         bool IsCompleted { get; }
         void Add(T task);
         bool TryAdd(T task);
 
-        // fixme - complete the interface?
+        // TODO: complete the interface?
     }
 }

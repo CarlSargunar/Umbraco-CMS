@@ -1,9 +1,23 @@
-﻿<div>
-    <input type="text" name="textbox" ng-model="model.value" id="{{model.alias}}"
-           class="umb-editor umb-textstring textstring"
-           val-server="value"
-           ng-required="model.validation.mandatory"
-           ng-trim="false" />
-    <span class="help-inline" val-msg-for="textbox" val-toggle-msg="valServer"></span>
-    <span class="help-inline" val-msg-for="textbox" val-toggle-msg="required">Required</span>
+<div ng-controller="Umbraco.PropertyEditors.textboxController">
+    <ng-form name="textboxFieldForm">
+        <input type="text" name="textbox" ng-model="model.value" id="{{model.alias}}"
+               class="umb-property-editor umb-textstring textstring"
+               val-server="value"
+               ng-required="model.validation.mandatory"
+               ng-trim="false"
+               ng-keyup="model.change()" />
+
+        <span ng-messages="textboxFieldForm.textbox.$error" show-validation-on-submit >
+            <span class="help-inline" ng-message="valServer">{{textboxFieldForm.textbox.errorMsg}}</span>
+            <span class="help-inline" ng-message="required"><localize key="general_required">Required</localize></span>
+        </span>
+
+        <div class="help" ng-if="model.count >= (model.config.maxChars*.8) && model.count <= model.config.maxChars">
+            <localize key="textbox_characters_left" tokens="[model.config.maxChars - model.count]" watch-tokens="true">%0% characters left.</localize>
+        </div>
+        <div class="help text-error" ng-if="model.count > model.config.maxChars">
+            <localize key="textbox_characters_exceed" tokens="[model.config.maxChars, model.count - model.config.maxChars]" watch-tokens="true">Maximum %0% characters, <strong>%1%</strong> too many.</localize>
+        </div>
+
+    </ng-form>
 </div>
